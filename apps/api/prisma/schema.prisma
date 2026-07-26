@@ -1,0 +1,578 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  PASSENGER
+  DRIVER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  BLOCKED
+  PENDING
+}
+
+enum DriverStatus {
+  OFFLINE
+  ONLINE
+  BUSY
+  SUSPENDED
+}
+
+enum DriverVerificationStatus {
+  NOT_SUBMITTED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum VehicleStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  BLOCKED
+}
+
+enum DevicePlatform {
+  IOS
+  ANDROID
+  WEB
+}
+
+enum DriverLocationConfidence {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum DispatchAttemptLogStatus {
+  CANDIDATE
+}
+
+enum DriverBidStatus {
+  ACTIVE
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  WITHDRAWN
+}
+
+enum RealtimeEventType {
+  TRIP_SEARCHING
+  TRIP_UPDATED
+  TRIP_CANCELLED
+  BID_CREATED
+  BID_WITHDRAWN
+  BID_EXPIRED
+  BID_ACCEPTED
+  DRIVER_LOCATION_UPDATED
+  DRIVER_ARRIVED
+  TRIP_STARTED
+  TRIP_COMPLETED
+}
+
+enum RealtimeOutboxStatus {
+  PENDING
+  PROCESSING
+  DELIVERED
+}
+
+enum TripPaymentStatus {
+  RESERVED
+  SETTLED
+}
+
+enum PaymentIntentStatus {
+  CREATED
+  AUTHORIZED
+  CAPTURED
+  CANCELED
+  REFUNDED
+  FAILED
+}
+
+enum PaymentTransactionType {
+  AUTHORIZATION
+  CAPTURE
+  CANCELLATION
+  REFUND
+}
+
+enum PaymentTransactionStatus {
+  SUCCEEDED
+  FAILED
+}
+
+enum DriverPayoutStatus {
+  CREATED
+  PAID
+  FAILED
+}
+
+enum TripStatus {
+  DRAFT
+  SEARCHING
+  OFFERS_RECEIVED
+  DRIVER_SELECTED
+  PAYMENT_PENDING
+  PAYMENT_RESERVED
+  DRIVER_EN_ROUTE
+  DRIVER_ARRIVED
+  IN_PROGRESS
+  COMPLETED
+  SETTLED
+  CANCELLED_BY_PASSENGER
+  CANCELLED_BY_DRIVER
+  CANCELLED_BY_SYSTEM
+  PAYMENT_FAILED
+  DISPUTED
+  REFUNDED
+}
+
+enum TripStatusActorType {
+  PASSENGER
+  DRIVER
+  ADMIN
+  SYSTEM
+  PAYMENT
+}
+
+model User {
+  id               String            @id @default(uuid()) @db.Uuid
+  phone            String            @unique(map: "users_phone_key") @db.VarChar(16)
+  role             UserRole
+  status           UserStatus        @default(PENDING)
+  createdAt        DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime          @updatedAt @db.Timestamptz(3)
+  passengerProfile PassengerProfile?
+  driverProfile    DriverProfile?
+  deviceSessions   DeviceSession[]
+  passengerTrips   Trip[]           @relation("TripPassenger")
+  selectedTrips    Trip[]           @relation("TripSelectedDriver")
+  tripIdempotencyKeys TripIdempotencyKey[]
+  adminAuditLogs      AdminAuditLog[] @relation("AdminAuditActor")
+
+  @@index([role, status], map: "users_role_status_idx")
+  @@index([createdAt], map: "users_created_at_idx")
+  @@map("users")
+}
+
+model AdminAuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  adminId   String   @db.Uuid
+  action    String   @db.VarChar(64)
+  targetType String  @db.VarChar(64)
+  targetId  String   @db.Uuid
+  payload   Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  admin     User     @relation("AdminAuditActor", fields: [adminId], references: [id], onDelete: Restrict)
+
+  @@index([adminId, createdAt], map: "admin_audit_logs_admin_created_at_idx")
+  @@index([targetType, targetId, createdAt], map: "admin_audit_logs_target_created_at_idx")
+  @@map("admin_audit_logs")
+}
+
+model PassengerProfile {
+  userId              String  @id @db.Uuid
+  firstName           String  @db.VarChar(100)
+  lastName            String  @db.VarChar(100)
+  rating              Decimal @default(5.0) @db.Decimal(3, 2)
+  completedTripsCount Int     @default(0)
+  user                 User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("passenger_profiles")
+}
+
+model DriverProfile {
+  userId                String                   @id @db.Uuid
+  firstName             String                   @db.VarChar(100)
+  lastName              String                   @db.VarChar(100)
+  status                DriverStatus             @default(OFFLINE)
+  verificationStatus    DriverVerificationStatus @default(NOT_SUBMITTED)
+  rating                Decimal                  @default(5.0) @db.Decimal(3, 2)
+  completedTripsCount   Int                      @default(0)
+  commissionBasisPoints Int?                     @db.SmallInt
+  createdAt             DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime                 @updatedAt @db.Timestamptz(3)
+  user                  User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicles              Vehicle[]
+  locations             DriverLocation[]
+  dispatchAttemptLogs   DispatchAttemptLog[]
+  bids                  DriverBid[]
+
+  @@index([status, verificationStatus], map: "driver_profiles_status_verification_idx")
+  @@index([rating], map: "driver_profiles_rating_idx")
+  @@map("driver_profiles")
+}
+
+model Vehicle {
+  id                 String        @id @default(uuid()) @db.Uuid
+  driverId           String        @db.Uuid
+  brand              String        @db.VarChar(100)
+  model              String        @db.VarChar(100)
+  color              String        @db.VarChar(50)
+  registrationNumber String        @unique(map: "vehicles_registration_number_key") @db.VarChar(32)
+  productionYear     Int           @db.SmallInt
+  status             VehicleStatus @default(PENDING)
+  driver             DriverProfile @relation(fields: [driverId], references: [userId], onDelete: Cascade)
+  selectedForTrips   Trip[]
+  bids               DriverBid[]
+
+  @@index([driverId, status], map: "vehicles_driver_status_idx")
+  @@index([status], map: "vehicles_status_idx")
+  @@map("vehicles")
+}
+
+model DeviceSession {
+  id               String         @id @default(uuid()) @db.Uuid
+  userId           String         @db.Uuid
+  deviceId         String         @db.VarChar(255)
+  platform         DevicePlatform
+  refreshTokenHash String         @db.VarChar(255)
+  lastSeenAt       DateTime       @default(now()) @db.Timestamptz(3)
+  revokedAt        DateTime?      @db.Timestamptz(3)
+  createdAt        DateTime       @default(now()) @db.Timestamptz(3)
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, deviceId], map: "device_sessions_user_device_key")
+  @@index([userId, revokedAt], map: "device_sessions_user_revoked_idx")
+  @@index([lastSeenAt], map: "device_sessions_last_seen_at_idx")
+  @@map("device_sessions")
+}
+
+model DriverLocation {
+  id                 String                   @id @default(uuid()) @db.Uuid
+  driverId           String                   @db.Uuid
+  deviceId           String                   @db.VarChar(255)
+  recordedAt         DateTime                 @db.Timestamptz(3)
+  receivedAt         DateTime                 @default(now()) @db.Timestamptz(3)
+  location           Unsupported("geography(Point, 4326)")
+  accuracyMeters     Float
+  speedMetersPerSecond Float?
+  bearingDegrees     Float?
+  altitudeMeters     Float?
+  provider           String                   @db.VarChar(64)
+  reportedConfidence DriverLocationConfidence?
+  confidence         DriverLocationConfidence
+  suspectedSpoofing  Boolean                  @default(false)
+  stale              Boolean                  @default(false)
+  satellitesVisible  Int?
+  cellCount          Int?
+  driver             DriverProfile            @relation(fields: [driverId], references: [userId], onDelete: Cascade)
+
+  @@unique([deviceId, recordedAt], map: "driver_locations_device_recorded_at_key")
+  @@index([driverId, recordedAt], map: "driver_locations_driver_recorded_at_idx")
+  @@index([recordedAt], map: "driver_locations_recorded_at_idx")
+  @@map("driver_locations")
+}
+
+model Trip {
+  id                       String       @id @default(uuid()) @db.Uuid
+  passengerId              String       @db.Uuid
+  selectedDriverId         String?      @db.Uuid
+  selectedVehicleId        String?      @db.Uuid
+  status                   TripStatus   @default(DRAFT)
+  passengerPriceKopecks    Int
+  finalPriceKopecks        Int?
+  commissionBasisPoints    Int?         @db.SmallInt
+  commissionKopecks        Int?
+  driverPayoutKopecks      Int?
+  pickupLocation           Unsupported("geography(Point, 4326)")
+  destinationLocation      Unsupported("geography(Point, 4326)")
+  pickupAddress            String       @db.VarChar(512)
+  destinationAddress       String       @db.VarChar(512)
+  estimatedDistanceMeters  Int
+  estimatedDurationSeconds Int
+  startedAt                DateTime?    @db.Timestamptz(3)
+  completedAt              DateTime?    @db.Timestamptz(3)
+  cancelledAt              DateTime?    @db.Timestamptz(3)
+  createdAt                DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime     @updatedAt @db.Timestamptz(3)
+  version                  Int          @default(0)
+  childSeat                Boolean      @default(false)
+  pet                      Boolean      @default(false)
+  luggage                  Boolean      @default(false)
+  comment                  String?      @db.VarChar(1000)
+  cityCode                 String?      @db.VarChar(32)
+  passenger                User         @relation("TripPassenger", fields: [passengerId], references: [id], onDelete: Restrict)
+  selectedDriver           User?        @relation("TripSelectedDriver", fields: [selectedDriverId], references: [id], onDelete: SetNull)
+  selectedVehicle          Vehicle?     @relation(fields: [selectedVehicleId], references: [id], onDelete: SetNull)
+  stops                    TripStop[]
+  statusHistory            TripStatusHistory[]
+  idempotencyKeys          TripIdempotencyKey[]
+  dispatchAttempts         DispatchAttempt[]
+  bids                     DriverBid[]
+  payment                  TripPayment?
+  boardingCode             TripBoardingCode?
+  lifecycleActions         TripLifecycleAction[]
+  paymentIntent            PaymentIntent?
+  commissionRecord         CommissionRecord?
+  driverPayout             DriverPayout?
+
+  @@index([passengerId, createdAt], map: "trips_passenger_created_at_idx")
+  @@index([selectedDriverId, status], map: "trips_selected_driver_status_idx")
+  @@index([selectedVehicleId], map: "trips_selected_vehicle_idx")
+  @@index([status, createdAt], map: "trips_status_created_at_idx")
+  @@index([cityCode, status], map: "trips_city_status_idx")
+  @@map("trips")
+}
+
+model PaymentIntent {
+  id                  String              @id @default(uuid()) @db.Uuid
+  tripId              String              @unique(map: "payment_intents_trip_id_key") @db.Uuid
+  provider            String              @db.VarChar(64)
+  providerPaymentId   String              @unique(map: "payment_intents_provider_payment_id_key") @db.VarChar(128)
+  idempotencyKey      String              @unique(map: "payment_intents_idempotency_key_key") @db.VarChar(255)
+  amountKopecks       Int
+  currency            String              @default("RUB") @db.Char(3)
+  status              PaymentIntentStatus
+  createdAt           DateTime            @default(now()) @db.Timestamptz(3)
+  trip                Trip                @relation(fields: [tripId], references: [id], onDelete: Restrict)
+  transactions        PaymentTransaction[]
+
+  @@index([status, createdAt], map: "payment_intents_status_created_at_idx")
+  @@map("payment_intents")
+}
+
+model PaymentTransaction {
+  id                String                   @id @default(uuid()) @db.Uuid
+  paymentIntentId   String                   @db.Uuid
+  type              PaymentTransactionType
+  status            PaymentTransactionStatus
+  amountKopecks     Int
+  providerReference String                   @unique(map: "payment_transactions_provider_reference_key") @db.VarChar(128)
+  idempotencyKey    String                   @unique(map: "payment_transactions_idempotency_key_key") @db.VarChar(255)
+  createdAt         DateTime                 @default(now()) @db.Timestamptz(3)
+  paymentIntent     PaymentIntent            @relation(fields: [paymentIntentId], references: [id], onDelete: Restrict)
+
+  @@index([paymentIntentId, createdAt], map: "payment_transactions_intent_created_at_idx")
+  @@map("payment_transactions")
+}
+
+model CommissionRecord {
+  id                  String   @id @default(uuid()) @db.Uuid
+  tripId              String   @unique(map: "commission_records_trip_id_key") @db.Uuid
+  driverId            String   @db.Uuid
+  totalKopecks        Int
+  commissionBasisPoints Int
+  commissionKopecks   Int
+  driverPayoutKopecks Int
+  createdAt           DateTime @default(now()) @db.Timestamptz(3)
+  trip                Trip     @relation(fields: [tripId], references: [id], onDelete: Restrict)
+
+  @@index([driverId, createdAt], map: "commission_records_driver_created_at_idx")
+  @@map("commission_records")
+}
+
+model DriverPayout {
+  id                  String             @id @default(uuid()) @db.Uuid
+  tripId              String             @unique(map: "driver_payouts_trip_id_key") @db.Uuid
+  driverId            String             @db.Uuid
+  provider            String             @db.VarChar(64)
+  providerPayoutId    String             @unique(map: "driver_payouts_provider_payout_id_key") @db.VarChar(128)
+  idempotencyKey      String             @unique(map: "driver_payouts_idempotency_key_key") @db.VarChar(255)
+  amountKopecks       Int
+  status              DriverPayoutStatus
+  createdAt           DateTime           @default(now()) @db.Timestamptz(3)
+  trip                Trip               @relation(fields: [tripId], references: [id], onDelete: Restrict)
+
+  @@index([driverId, status, createdAt], map: "driver_payouts_driver_status_created_at_idx")
+  @@map("driver_payouts")
+}
+
+model PaymentWebhookEvent {
+  id              String   @id @default(uuid()) @db.Uuid
+  provider        String   @db.VarChar(64)
+  providerEventId String   @db.VarChar(128)
+  signature       String   @db.VarChar(512)
+  payload         Json
+  processedAt     DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([provider, providerEventId], map: "payment_webhook_events_provider_event_key")
+  @@index([processedAt], map: "payment_webhook_events_processed_at_idx")
+  @@map("payment_webhook_events")
+}
+
+model TripPayment {
+  id                    String            @id @default(uuid()) @db.Uuid
+  tripId                String            @unique(map: "trip_payments_trip_id_key") @db.Uuid
+  providerReference     String            @unique(map: "trip_payments_provider_reference_key") @db.VarChar(128)
+  status                TripPaymentStatus
+  reservedAmountKopecks Int
+  settledAt             DateTime?         @db.Timestamptz(3)
+  createdAt             DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime          @updatedAt @db.Timestamptz(3)
+  trip                  Trip              @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@map("trip_payments")
+}
+
+model TripBoardingCode {
+  id        String   @id @default(uuid()) @db.Uuid
+  tripId    String   @unique(map: "trip_boarding_codes_trip_id_key") @db.Uuid
+  codeHash  String   @db.Char(64)
+  attempts  Int      @default(0)
+  expiresAt DateTime @db.Timestamptz(3)
+  usedAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt], map: "trip_boarding_codes_expires_at_idx")
+  @@map("trip_boarding_codes")
+}
+
+model TripLifecycleAction {
+  id             String              @id @default(uuid()) @db.Uuid
+  tripId         String              @db.Uuid
+  action         String              @db.VarChar(64)
+  actorType      TripStatusActorType
+  actorId        String?             @db.Uuid
+  idempotencyKey String              @db.VarChar(255)
+  result         Json
+  createdAt      DateTime            @default(now()) @db.Timestamptz(3)
+  trip           Trip                @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@unique([tripId, action, actorId, idempotencyKey], map: "trip_lifecycle_actions_idempotency_key")
+  @@index([tripId, createdAt], map: "trip_lifecycle_actions_trip_created_at_idx")
+  @@map("trip_lifecycle_actions")
+}
+
+model CityCommissionRate {
+  cityCode              String   @id @db.VarChar(32)
+  commissionBasisPoints Int      @db.SmallInt
+  createdAt             DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("city_commission_rates")
+}
+
+model RealtimeRoomSequence {
+  room       String   @id @db.VarChar(128)
+  lastValue  Int      @default(0)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("realtime_room_sequences")
+}
+
+model RealtimeOutboxEvent {
+  id          String                @id @default(uuid()) @db.Uuid
+  room        String                @db.VarChar(128)
+  eventType   RealtimeEventType
+  sequence    Int
+  payload     Json
+  status      RealtimeOutboxStatus  @default(PENDING)
+  attempts    Int                   @default(0)
+  availableAt DateTime              @default(now()) @db.Timestamptz(3)
+  deliveredAt DateTime?             @db.Timestamptz(3)
+  createdAt   DateTime              @default(now()) @db.Timestamptz(3)
+
+  @@unique([room, sequence], map: "realtime_outbox_events_room_sequence_key")
+  @@index([status, availableAt], map: "realtime_outbox_events_status_available_at_idx")
+  @@index([room, sequence], map: "realtime_outbox_events_room_sequence_idx")
+  @@map("realtime_outbox_events")
+}
+
+model DriverBid {
+  id                       String          @id @default(uuid()) @db.Uuid
+  tripId                   String          @db.Uuid
+  driverId                 String          @db.Uuid
+  vehicleId                String          @db.Uuid
+  offeredPriceKopecks      Int
+  estimatedPickupSeconds   Int
+  distanceToPickupMeters   Int
+  status                   DriverBidStatus @default(ACTIVE)
+  expiresAt                DateTime        @db.Timestamptz(3)
+  createdAt                DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime        @updatedAt @db.Timestamptz(3)
+  version                  Int             @default(0)
+  trip                     Trip            @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  driver                   DriverProfile   @relation(fields: [driverId], references: [userId], onDelete: Cascade)
+  vehicle                  Vehicle         @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+
+  @@index([tripId, status, expiresAt], map: "driver_bids_trip_status_expires_at_idx")
+  @@index([driverId, status], map: "driver_bids_driver_status_idx")
+  @@index([vehicleId], map: "driver_bids_vehicle_idx")
+  @@map("driver_bids")
+}
+
+model DispatchAttempt {
+  id                String               @id @default(uuid()) @db.Uuid
+  tripId            String               @db.Uuid
+  radiusMeters      Int
+  candidateCount    Int
+  redispatchReason  String?              @db.VarChar(512)
+  createdAt         DateTime             @default(now()) @db.Timestamptz(3)
+  trip              Trip                 @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  logs              DispatchAttemptLog[]
+
+  @@index([tripId, createdAt], map: "dispatch_attempts_trip_created_at_idx")
+  @@map("dispatch_attempts")
+}
+
+model DispatchAttemptLog {
+  id                     String                  @id @default(uuid()) @db.Uuid
+  attemptId              String                  @db.Uuid
+  driverId               String                  @db.Uuid
+  rank                   Int
+  distanceMeters         Int
+  estimatedPickupSeconds Int
+  status                 DispatchAttemptLogStatus @default(CANDIDATE)
+  createdAt              DateTime                @default(now()) @db.Timestamptz(3)
+  attempt                DispatchAttempt         @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  driver                 DriverProfile           @relation(fields: [driverId], references: [userId], onDelete: Cascade)
+
+  @@unique([attemptId, driverId], map: "dispatch_attempt_logs_attempt_driver_key")
+  @@index([attemptId, rank], map: "dispatch_attempt_logs_attempt_rank_idx")
+  @@index([driverId, createdAt], map: "dispatch_attempt_logs_driver_created_at_idx")
+  @@map("dispatch_attempt_logs")
+}
+
+model TripStop {
+  id       String                                @id @default(uuid()) @db.Uuid
+  tripId   String                                @db.Uuid
+  sequence Int
+  location Unsupported("geography(Point, 4326)")
+  address  String                                @db.VarChar(512)
+  trip     Trip                                  @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@unique([tripId, sequence], map: "trip_stops_trip_sequence_key")
+  @@map("trip_stops")
+}
+
+model TripStatusHistory {
+  id             String              @id @default(uuid()) @db.Uuid
+  tripId         String              @db.Uuid
+  previousStatus TripStatus
+  newStatus      TripStatus
+  actorType      TripStatusActorType
+  actorId        String?             @db.Uuid
+  reason         String?             @db.VarChar(512)
+  createdAt      DateTime            @default(now()) @db.Timestamptz(3)
+  trip           Trip                @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@index([tripId, createdAt], map: "trip_status_history_trip_created_at_idx")
+  @@index([actorId, createdAt], map: "trip_status_history_actor_created_at_idx")
+  @@map("trip_status_history")
+}
+
+model TripIdempotencyKey {
+  id          String   @id @default(uuid()) @db.Uuid
+  passengerId String   @db.Uuid
+  key         String   @db.VarChar(255)
+  requestHash String   @db.Char(64)
+  tripId      String   @unique(map: "trip_idempotency_keys_trip_id_key") @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  passenger   User     @relation(fields: [passengerId], references: [id], onDelete: Cascade)
+  trip        Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@unique([passengerId, key], map: "trip_idempotency_keys_passenger_key_key")
+  @@map("trip_idempotency_keys")
+}

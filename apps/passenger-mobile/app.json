@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "Resilient Taxi Passenger",
+    "slug": "resilient-taxi-passenger",
+    "scheme": "resilienttaxi-passenger",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "plugins": ["expo-router", "expo-secure-store", "expo-dev-client"],
+    "experiments": { "typedRoutes": true },
+    "android": { "package": "ru.location.resilienttaxi.passenger" },
+    "ios": { "bundleIdentifier": "ru.location.resilienttaxi.passenger" }
+  }
+}

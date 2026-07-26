@@ -1,0 +1,25 @@
+node_modules/
+.pnpm-store/
+.turbo/
+.next/
+dist/
+coverage/
+*.tsbuildinfo
+apps/api/src/generated/
+
+.env
+.env.*
+!.env.example
+
+*.log
+.DS_Store
+Thumbs.db
+
+.idea/
+.vscode/
+
+# Android / Gradle
+apps/driver-android/.gradle/
+apps/driver-android/**/build/
+apps/driver-android/local.properties
+apps/driver-android/.tools/

@@ -1,0 +1,31 @@
+{
+  "name": "resilient-taxi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Resilient Taxi monorepo",
+  "packageManager": "pnpm@10.14.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "infra:up": "docker compose up -d --wait",
+    "infra:down": "docker compose down",
+    "infra:logs": "docker compose logs -f"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.1",
+    "eslint": "9.39.1",
+    "globals": "16.5.0",
+    "prettier": "3.7.4",
+    "turbo": "2.7.2",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.50.1"
+  }
+}
