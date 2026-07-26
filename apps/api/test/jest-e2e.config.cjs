@@ -4,4 +4,5 @@ module.exports = {
   ...base,
   rootDir: '..',
   testMatch: ['<rootDir>/test/**/*.e2e-spec.ts'],
+  testPathIgnorePatterns: ['dispatch\\.postgis\\.integration\\.e2e-spec\\.ts'],
 };

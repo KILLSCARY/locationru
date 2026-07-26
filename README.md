@@ -36,6 +36,45 @@ Copy-Item .env.example .env
 - `pnpm infra:down` — остановить инфраструктуру
 - `pnpm infra:logs` — показать логи инфраструктуры в реальном времени
 
+## CI
+
+Workflow [CI](.github/workflows/ci.yml) запускается для каждого pull request и
+push в `main` (а также в текущую ветку по умолчанию `master` до её переименования).
+Он не использует локальный `.env`: временные переменные, PostgreSQL/PostGIS и Redis
+создаются внутри GitHub Actions job.
+
+Перед отправкой pull request можно выполнить эквивалентные проверки локально:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm infra:up
+pnpm --filter @resilient-taxi/api db:validate
+pnpm --filter @resilient-taxi/api prisma:generate
+pnpm --filter @resilient-taxi/api db:migrate:deploy
+RUN_POSTGIS_INTEGRATION=true pnpm --filter @resilient-taxi/api test:integration
+pnpm --filter @resilient-taxi/api test:e2e
+pnpm --filter @resilient-taxi/api build
+pnpm --filter @resilient-taxi/admin-web build
+pnpm --filter @resilient-taxi/passenger-mobile typecheck
+```
+
+В PowerShell переменная для PostGIS integration-теста задаётся так:
+
+```powershell
+$env:RUN_POSTGIS_INTEGRATION = 'true'
+pnpm --filter @resilient-taxi/api test:integration
+```
+
+Android-проверки выполняются из каталога приложения:
+
+```bash
+cd apps/driver-android
+./gradlew unitTest detekt ktlintCheck :app:assembleDevDebug
+```
+
 ### API
 
 - `pnpm --filter @resilient-taxi/api start:dev` — запустить API с перезагрузкой
