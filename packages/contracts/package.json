@@ -16,7 +16,7 @@
     "build": "tsc",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/contracts.test.mjs"
+    "test": "pnpm run build && node --test test/contracts.test.mjs"
   },
   "dependencies": {
     "zod": "3.24.1"

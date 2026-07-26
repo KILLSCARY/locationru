@@ -26,6 +26,9 @@ export const environmentValidationSchema = Joi.object({
     .integer()
     .min(1)
     .default(10_000),
+  TRIPS_BOARDING_CODE_HASH_SECRET: Joi.string().min(32).required(),
+  TRIPS_BOARDING_CODE_MAX_ATTEMPTS: Joi.number().integer().min(1).default(5),
+  TRIPS_BOARDING_CODE_TTL_SECONDS: Joi.number().integer().min(30).default(300),
   DRIVER_LOCATIONS_BATCH_MAX_SIZE: Joi.number()
     .integer()
     .min(1)

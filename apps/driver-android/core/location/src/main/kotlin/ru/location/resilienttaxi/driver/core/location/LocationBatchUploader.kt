@@ -4,6 +4,10 @@ import ru.location.resilienttaxi.driver.core.database.OfflineLocationEntity
 import ru.location.resilienttaxi.driver.core.network.DriverApi
 import ru.location.resilienttaxi.driver.core.network.DriverLocationBatchRequest
 import ru.location.resilienttaxi.driver.core.network.DriverLocationUploadRequest
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import javax.inject.Inject
 
 class LocationBatchUploader
@@ -35,7 +39,7 @@ class LocationBatchUploader
 
         private fun EvaluatedLocation.toRequest() =
             DriverLocationUploadRequest(
-                recordedAtEpochMillis = sample.recordedAtEpochMillis,
+                recordedAt = timestamp(sample.recordedAtEpochMillis),
                 latitude = sample.latitude,
                 longitude = sample.longitude,
                 accuracyMeters = sample.accuracyMeters,
@@ -43,7 +47,7 @@ class LocationBatchUploader
                 bearingDegrees = sample.bearingDegrees,
                 altitudeMeters = sample.altitudeMeters,
                 provider = sample.provider,
-                quality = quality.name,
+                confidence = quality.name,
                 suspectedSpoofing = suspectedSpoofing,
                 satellitesVisible = satellitesVisible,
                 cellCount = cellCount,
@@ -51,7 +55,7 @@ class LocationBatchUploader
 
         private fun OfflineLocationEntity.toRequest() =
             DriverLocationUploadRequest(
-                recordedAtEpochMillis = recordedAtEpochMillis,
+                recordedAt = timestamp(recordedAtEpochMillis),
                 latitude = latitude,
                 longitude = longitude,
                 accuracyMeters = accuracyMeters,
@@ -59,9 +63,14 @@ class LocationBatchUploader
                 bearingDegrees = bearingDegrees,
                 altitudeMeters = altitudeMeters,
                 provider = provider,
-                quality = quality,
+                confidence = quality,
                 suspectedSpoofing = suspectedSpoofing,
                 satellitesVisible = satellitesVisible,
                 cellCount = cellCount,
             )
+
+        private fun timestamp(epochMillis: Long): String =
+            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+                .apply { timeZone = TimeZone.getTimeZone("UTC") }
+                .format(Date(epochMillis))
     }

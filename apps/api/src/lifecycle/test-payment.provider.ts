@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 export interface PaymentProvider {
   capture(reference: string): Promise<void>;
@@ -8,7 +9,15 @@ export interface PaymentProvider {
 }
 
 @Injectable()
-export class TestPaymentProvider implements PaymentProvider {
+export class TestPaymentProvider implements PaymentProvider, OnModuleInit {
+  constructor(private readonly config: ConfigService) {}
+
+  onModuleInit(): void {
+    if (this.config.getOrThrow<string>('app.environment') === 'production') {
+      throw new Error('TestPaymentProvider must not run in production');
+    }
+  }
+
   async reserve(amountKopecks: number): Promise<{ reference: string }> {
     void amountKopecks;
     return { reference: `test-reservation-${randomUUID()}` };
