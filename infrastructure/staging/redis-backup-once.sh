@@ -11,8 +11,8 @@ temporary_path="$backup_path.tmp"
 
 mkdir -p "$backup_dir"
 redis-cli \
-  --host "$redis_host" \
-  --port "$redis_port" \
+  -h "$redis_host" \
+  -p "$redis_port" \
   --rdb "$temporary_path"
 redis-check-rdb "$temporary_path" >/dev/null
 mv "$temporary_path" "$backup_path"

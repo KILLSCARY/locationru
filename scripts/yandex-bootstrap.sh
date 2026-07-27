@@ -23,6 +23,8 @@ apt-get install --yes ca-certificates curl git jq docker.io docker-compose-v2
 
 systemctl enable --now docker
 usermod --append --groups docker "$deploy_user"
+printf 'vm.overcommit_memory=1\n' >/etc/sysctl.d/99-resilient-taxi-redis.conf
+sysctl --system >/dev/null
 
 external_ip="$(
   curl \
@@ -91,6 +93,7 @@ docker compose \
 systemctl daemon-reload
 systemctl enable --now resilient-taxi-backup.timer
 systemctl start resilient-taxi-backup.service
+docker builder prune --force
 
 echo
 echo 'Resilient Taxi staging is running:'
