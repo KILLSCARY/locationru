@@ -1,5 +1,12 @@
 # Resilient Taxi
 
+## Yandex Cloud staging
+
+Стартовое облачное окружение запускает API, admin-web, PostGIS, Redis и HTTPS
+на одной VM. Резервные копии отправляются в приватный Object Storage без
+постоянных ключей. Состав, ограничения, стоимость и команды обслуживания
+описаны в [инструкции по Yandex Cloud staging](docs/yandex-staging.md).
+
 Монорепозиторий сервисов и клиентских приложений платформы Resilient Taxi.
 Проект использует pnpm workspaces и Turborepo. На этом этапе добавлен только
 базовый технический каркас без бизнес-логики, Firebase и платёжных SDK.

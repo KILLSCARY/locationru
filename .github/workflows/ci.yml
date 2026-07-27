@@ -73,6 +73,7 @@ jobs:
           set -o pipefail
           cp .env.staging.example .env.staging
           docker compose --env-file .env.staging --file docker-compose.staging.yml config --quiet 2>&1 | tee artifacts/node/staging-compose.log
+          docker compose --env-file .env.staging --file docker-compose.yandex.yml config --quiet 2>&1 | tee artifacts/node/yandex-compose.log
 
       - name: Build API
         run: |
