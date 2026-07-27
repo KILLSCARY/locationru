@@ -218,6 +218,10 @@ jobs:
       - name: Prepare Android report directory
         run: mkdir -p artifacts/android
 
+      - name: Allow Gradle wrapper execution
+        working-directory: apps/driver-android
+        run: chmod +x gradlew
+
       - name: Run Android unit tests and static checks
         working-directory: apps/driver-android
         run: |
@@ -279,7 +283,7 @@ jobs:
       - name: Audit production dependency vulnerabilities
         run: |
           set -o pipefail
-          pnpm audit --audit-level high | tee artifacts/security/pnpm-audit.log
+          pnpm audit --prod --audit-level high | tee artifacts/security/pnpm-audit.log
 
       - name: Upload security reports on failure
         if: failure()
