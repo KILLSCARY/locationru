@@ -235,6 +235,35 @@ describe('AuthService', () => {
     expect(session?.refreshTokenHash).not.toContain(tokens.refreshToken);
   });
 
+  it('uses the configured OTP only in development', async () => {
+    const configService = new ConfigService({
+      app: { environment: 'development' },
+      auth: {
+        accessTokenTtlSeconds: 900,
+        developmentOtpCode: '111111',
+        jwtSecret,
+        otpHashSecret: 'test-otp-hash-secret-that-is-at-least-32-characters',
+        otpMaxAttempts: 3,
+        otpRequestLimit: 3,
+        otpRequestWindowSeconds: 60,
+        otpTtlSeconds: 300,
+        refreshTokenTtlSeconds: 3600,
+      },
+    });
+    authService = new AuthService(
+      configService,
+      jwtService,
+      new PhoneNormalizer(),
+      prisma as unknown as PrismaService,
+      redis as unknown as RedisService,
+      smsProvider,
+    );
+
+    await authService.requestCode(phone);
+
+    expect(smsProvider.lastCode).toBe('111111');
+  });
+
   it('signs in an existing user and keeps their role', async () => {
     prisma.usersByPhone.set(phone, {
       id: randomUUID(),

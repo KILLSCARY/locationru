@@ -22,6 +22,9 @@ export const environmentValidationSchema = Joi.object({
   AUTH_OTP_MAX_ATTEMPTS: Joi.number().integer().min(1).default(5),
   AUTH_OTP_REQUEST_LIMIT: Joi.number().integer().min(1).default(3),
   AUTH_OTP_REQUEST_WINDOW_SECONDS: Joi.number().integer().min(1).default(60),
+  AUTH_DEVELOPMENT_OTP_CODE: Joi.string()
+    .pattern(/^\d{6}$/)
+    .optional(),
   TRIPS_MIN_PASSENGER_PRICE_KOPECKS: Joi.number()
     .integer()
     .min(1)

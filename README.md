@@ -35,6 +35,12 @@ Copy-Item .env.example .env
 - `pnpm infra:up` — запустить PostgreSQL/PostGIS и Redis
 - `pnpm infra:down` — остановить инфраструктуру
 - `pnpm infra:logs` — показать логи инфраструктуры в реальном времени
+- `pnpm dev:stack` — запустить полный локальный integration stack
+- `pnpm dev:seed` — применить migrations и создать development fixtures
+- `pnpm dev:reset` — пересоздать локальные PostgreSQL/Redis volumes и fixtures
+- `pnpm test:journey` — провести тестовую поездку до `SETTLED` без мобильного UI
+
+Подробная инструкция: [локальная интеграционная среда](docs/local-development.md).
 
 ## CI
 

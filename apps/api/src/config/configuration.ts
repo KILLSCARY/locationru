@@ -11,6 +11,7 @@ export interface ApplicationConfig {
   };
   auth: {
     accessTokenTtlSeconds: number;
+    developmentOtpCode: string | undefined;
     jwtSecret: string;
     otpHashSecret: string;
     otpMaxAttempts: number;
@@ -70,6 +71,7 @@ export default (): ApplicationConfig => ({
     accessTokenTtlSeconds: Number(
       process.env.AUTH_ACCESS_TOKEN_TTL_SECONDS ?? 900,
     ),
+    developmentOtpCode: process.env.AUTH_DEVELOPMENT_OTP_CODE,
     jwtSecret: process.env.AUTH_JWT_SECRET ?? '',
     otpHashSecret: process.env.AUTH_OTP_HASH_SECRET ?? '',
     otpMaxAttempts: Number(process.env.AUTH_OTP_MAX_ATTEMPTS ?? 5),
