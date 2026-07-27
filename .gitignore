@@ -10,6 +10,8 @@ apps/api/src/generated/
 .env
 .env.*
 !.env.example
+!.env.*.example
+.staging/
 
 *.log
 .DS_Store

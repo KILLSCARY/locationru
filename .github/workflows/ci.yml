@@ -68,6 +68,12 @@ jobs:
           set -o pipefail
           pnpm test | tee artifacts/node/unit-tests.log
 
+      - name: Validate self-hosted staging configuration
+        run: |
+          set -o pipefail
+          cp .env.staging.example .env.staging
+          docker compose --env-file .env.staging --file docker-compose.staging.yml config --quiet 2>&1 | tee artifacts/node/staging-compose.log
+
       - name: Build API
         run: |
           set -o pipefail

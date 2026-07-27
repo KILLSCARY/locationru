@@ -42,6 +42,20 @@ Copy-Item .env.example .env
 
 Подробная инструкция: [локальная интеграционная среда](docs/local-development.md).
 
+## Безопасный self-hosted staging
+
+Локальный staging без облачных расходов запускается отдельными командами:
+
+- `pnpm staging:init` — создать `.env.staging` со случайными локальными секретами
+- `pnpm staging:up` — собрать и запустить API, admin-web, PostGIS, Redis, MinIO и HTTPS
+- `pnpm staging:status` — показать состояние контейнеров
+- `pnpm staging:backup` — немедленно создать проверенную копию PostgreSQL
+- `pnpm staging:backups` — показать сохранённые backup-объекты
+- `pnpm staging:logs` — показать логи
+- `pnpm staging:down` — остановить окружение с сохранением данных
+
+Подробная инструкция: [безопасный self-hosted staging](docs/self-hosted-staging.md).
+
 ## CI
 
 Workflow [CI](.github/workflows/ci.yml) запускается для каждого pull request и
