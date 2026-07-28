@@ -18,6 +18,8 @@ import ru.location.resilienttaxi.driver.core.network.DriverBidResponse
 import ru.location.resilienttaxi.driver.core.network.RequestCodeRequest
 import ru.location.resilienttaxi.driver.core.network.VerifyCodeRequest
 import ru.location.resilienttaxi.driver.domain.DriverSession
+import ru.location.resilienttaxi.driver.domain.OtpCode
+import ru.location.resilienttaxi.driver.domain.PhoneNumber
 import ru.location.resilienttaxi.driver.domain.TokenStorage
 import java.net.URI
 import java.time.Instant
@@ -64,8 +66,8 @@ class DriverWorkspaceViewModel
         }
 
         fun requestCode(phone: String) {
-            val normalized = phone.filter { it.isDigit() || it == '+' }
-            if (normalized.length < 8) {
+            val normalized = PhoneNumber.normalizeOrNull(phone)
+            if (normalized == null) {
                 mutableState.value = DriverUiState.PhoneEntry(error = "Введите номер в международном формате")
                 return
             }
@@ -81,7 +83,7 @@ class DriverWorkspaceViewModel
             phone: String,
             code: String,
         ) {
-            if (!code.matches(Regex("\\d{6}"))) {
+            if (!OtpCode.isValid(code)) {
                 mutableState.value = DriverUiState.CodeEntry(phone, error = "Код состоит из 6 цифр")
                 return
             }

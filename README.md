@@ -112,7 +112,7 @@ docker compose exec postgres psql -U resilient_taxi -d resilient_taxi \
 - `apps/api` — серверное API
 - `apps/admin-web` — веб-приложение администратора
 - `apps/passenger-mobile` — мобильное приложение пассажира
-- `apps/driver-android` — заготовка отдельного Android-приложения
+- `apps/driver-android` — Android-приложение водителя (Kotlin, Compose)
 - `packages/contracts` — контракты взаимодействия
 - `packages/shared-types` — общие TypeScript-типы
 - `packages/config` — общая конфигурация

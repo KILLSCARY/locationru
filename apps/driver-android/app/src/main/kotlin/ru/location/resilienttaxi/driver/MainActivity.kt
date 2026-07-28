@@ -32,6 +32,10 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import ru.location.resilienttaxi.driver.core.network.AvailableTripResponse
+import ru.location.resilienttaxi.driver.domain.CommissionCalculator
+import ru.location.resilienttaxi.driver.domain.OtpCode
+
+private const val ESTIMATED_COMMISSION_BASIS_POINTS = 1_500
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -90,7 +94,7 @@ private fun CodeScreen(
         Text("Код отправлен на ${state.phone}")
         OutlinedTextField(
             value = code,
-            onValueChange = { code = it.filter(Char::isDigit).take(6) },
+            onValueChange = { code = OtpCode.sanitize(it) },
             label = { Text("Код из 6 цифр") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.fillMaxWidth(),
@@ -165,7 +169,11 @@ private fun TripCard(
     onSkip: (String) -> Unit,
 ) {
     var ownPrice by remember { mutableStateOf("") }
-    val commission = trip.passengerPriceKopecks * 15 / 100
+    val fare =
+        CommissionCalculator.breakdown(
+            totalKopecks = trip.passengerPriceKopecks,
+            commissionBasisPoints = ESTIMATED_COMMISSION_BASIS_POINTS,
+        )
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(16.dp)) {
             Text(
@@ -173,7 +181,7 @@ private fun TripCard(
                 style = MaterialTheme.typography.titleMedium,
             )
             Text("Цена пассажира: ${trip.passengerPriceKopecks} коп.")
-            Text("Оценочная комиссия (15%): $commission коп.; чистый доход: ${trip.passengerPriceKopecks - commission} коп.")
+            Text("Оценочная комиссия (15%): ${fare.commissionKopecks} коп.; чистый доход: ${fare.driverPayoutKopecks} коп.")
             Text("До пассажира: ${trip.distanceToPickupMeters} м, ~${trip.estimatedPickupSeconds} сек")
             Divider()
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
