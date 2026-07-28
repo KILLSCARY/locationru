@@ -15,26 +15,26 @@
 
 ### Backend (`apps/api`, NestJS + Prisma + PostGIS + Redis)
 
-| Домен | Статус | Комментарий |
-|-------|:------:|-------------|
-| Auth (OTP, JWT, refresh) | 🟡 | Логика готова; SMS через `DevelopmentSmsProvider` (код в лог) |
-| Trips + машина состояний | ✅ | Централизованный `trip-state-machine` |
-| Dispatch (подбор водителей) | 🟡 | PostGIS-поиск готов; ETA по прямой, без routing API |
-| Driver locations (live + история) | ✅ | Валидация скорости, устаревания, rate limit |
-| Bids (ставки водителей) | ✅ | TTL-ставки |
-| Finance (комиссии, payout) | ✅ | Снапшот тарифа в транзакции создания поездки |
-| Payments | 🟡 | Интерфейс + вебхуки + идемпотентность; `DevelopmentPaymentProvider` |
-| Realtime (WebSocket + outbox) | ✅ | Транзакционный outbox, поллинг |
-| Admin (аудит) | ✅ | REST под `/api/v1/admin` |
-| Health (`/health`, `/health/ready`) | ✅ | Проверка PostgreSQL и Redis |
+| Домен                               | Статус | Комментарий                                                         |
+| ----------------------------------- | :----: | ------------------------------------------------------------------- |
+| Auth (OTP, JWT, refresh)            |   🟡   | Логика готова; SMS через `DevelopmentSmsProvider` (код в лог)       |
+| Trips + машина состояний            |   ✅   | Централизованный `trip-state-machine`                               |
+| Dispatch (подбор водителей)         |   🟡   | PostGIS-поиск готов; ETA по прямой, без routing API                 |
+| Driver locations (live + история)   |   ✅   | Валидация скорости, устаревания, rate limit                         |
+| Bids (ставки водителей)             |   ✅   | TTL-ставки                                                          |
+| Finance (комиссии, payout)          |   ✅   | Снапшот тарифа в транзакции создания поездки                        |
+| Payments                            |   🟡   | Интерфейс + вебхуки + идемпотентность; `DevelopmentPaymentProvider` |
+| Realtime (WebSocket + outbox)       |   ✅   | Транзакционный outbox, поллинг                                      |
+| Admin (аудит)                       |   ✅   | REST под `/api/v1/admin`                                            |
+| Health (`/health`, `/health/ready`) |   ✅   | Проверка PostgreSQL и Redis                                         |
 
 ### Клиенты
 
-| Приложение | Стек | Статус |
-|------------|------|:------:|
-| `apps/admin-web` | Next.js | 🟡 логин + список/детали поездок |
-| `apps/passenger-mobile` | Expo/React Native | 🟡 auth / new trip / trip details |
-| `apps/driver-android` | Kotlin (модульная структура) | ⬜ заготовка core/domain/feature |
+| Приложение              | Стек                         |              Статус               |
+| ----------------------- | ---------------------------- | :-------------------------------: |
+| `apps/admin-web`        | Next.js                      | 🟡 логин + список/детали поездок  |
+| `apps/passenger-mobile` | Expo/React Native            | 🟡 auth / new trip / trip details |
+| `apps/driver-android`   | Kotlin (модульная структура) | ⬜ заготовка core/domain/feature  |
 
 ### Общие пакеты
 
@@ -95,12 +95,14 @@
 ## Этап 3. Дозрелость клиентов
 
 ### 3.1 passenger-mobile
+
 - [ ] Полный цикл: создание заказа → выбор ставки → активная поездка →
       оплата → завершение.
 - [ ] Обработка realtime-обновлений статуса и позиции водителя.
 - [ ] Экран истории поездок.
 
 ### 3.2 admin-web
+
 - [ ] Управление водителями и пользователями.
 - [ ] Просмотр журнала аудита.
 - [ ] Настройки тарифов/комиссий (глобальные, городские, индивидуальные).
