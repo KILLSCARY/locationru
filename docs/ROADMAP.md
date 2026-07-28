@@ -162,12 +162,14 @@ Seam маршрутизации готов: геопоиск-предфильт�
 
 ## Этап 4. Эксплуатация и качество
 
+- [x] CI (`.github/workflows/ci.yml`): на каждый PR и push в `master`
+      прогоняются `format:check` / `lint` / `typecheck` / `test` для backend
+      и `:domain:test` / `ktlintCheck` / `detekt` для driver-android.
 - [ ] Наблюдаемость: структурные логи (частично есть), метрики, трейсинг.
-- [ ] CI: прогон `lint` / `typecheck` / `test` / `format:check` на PR.
-- [ ] Интеграционные тесты PostGIS в CI (`RUN_POSTGIS_INTEGRATION=true`).
+- [ ] Интеграционные тесты PostGIS в CI (`RUN_POSTGIS_INTEGRATION=true`) —
+      требуют сервиса PostgreSQL/PostGIS в workflow.
 - [ ] Production-конфигурация Docker и деплой.
-- [ ] Документация в зарезервированных разделах `docs/geo/` и
-      `docs/payments/`.
+- [ ] Документация в зарезервированном разделе `docs/geo/`.
 
 ---
 

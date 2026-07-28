@@ -23,6 +23,13 @@ pnpm dev
 Copy-Item .env.example .env
 ```
 
+## Непрерывная интеграция
+
+На каждый pull request и push в `master` GitHub Actions
+(`.github/workflows/ci.yml`) прогоняет проверки backend
+(`format:check`, `lint`, `typecheck`, `test`) и модуля `domain` приложения
+водителя (`:domain:test`, `ktlintCheck`, `detekt`).
+
 ## Команды
 
 - `pnpm dev` — запустить проекты в режиме разработки
