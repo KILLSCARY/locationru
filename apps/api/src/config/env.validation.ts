@@ -71,6 +71,33 @@ export const environmentValidationSchema = Joi.object({
     .max(10_000)
     .default(800),
   FINANCE_MIN_COMMISSION_KOPECKS: Joi.number().integer().min(0).default(0),
+  PAYMENTS_PROVIDER: Joi.string()
+    .valid('development', 'http')
+    .default('development')
+    // The development simulator must never move money in production.
+    .when('NODE_ENV', { is: 'production', then: Joi.valid('http') }),
+  PAYMENTS_API_BASE_URL: Joi.string()
+    .uri({ scheme: ['http', 'https'] })
+    .when('PAYMENTS_PROVIDER', {
+      is: 'http',
+      then: Joi.required(),
+      otherwise: Joi.optional(),
+    }),
+  PAYMENTS_API_KEY: Joi.string().min(1).when('PAYMENTS_PROVIDER', {
+    is: 'http',
+    then: Joi.required(),
+    otherwise: Joi.optional(),
+  }),
+  PAYMENTS_WEBHOOK_SECRET: Joi.string().min(16).when('PAYMENTS_PROVIDER', {
+    is: 'http',
+    then: Joi.required(),
+    otherwise: Joi.optional(),
+  }),
+  PAYMENTS_REQUEST_TIMEOUT_MS: Joi.number()
+    .integer()
+    .min(1_000)
+    .max(60_000)
+    .default(10_000),
   REALTIME_LOCATION_EVENT_INTERVAL_SECONDS: Joi.number()
     .integer()
     .min(1)

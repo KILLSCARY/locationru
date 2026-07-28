@@ -38,7 +38,7 @@ export class PaymentService {
     return this.prisma.paymentIntent.create({
       data: {
         tripId: input.tripId,
-        provider: 'development',
+        provider: this.provider.name,
         providerPaymentId: created.id,
         idempotencyKey: input.idempotencyKey,
         amountKopecks: input.amountKopecks,
@@ -136,7 +136,7 @@ export class PaymentService {
       data: {
         tripId: input.tripId,
         driverId: input.driverId,
-        provider: 'development',
+        provider: this.provider.name,
         providerPayoutId: payout.id,
         idempotencyKey: input.idempotencyKey,
         amountKopecks: input.amountKopecks,
@@ -168,7 +168,7 @@ export class PaymentService {
     const existing = await this.prisma.paymentWebhookEvent.findUnique({
       where: {
         provider_providerEventId: {
-          provider: 'development',
+          provider: this.provider.name,
           providerEventId: event.eventId,
         },
       },
@@ -176,7 +176,7 @@ export class PaymentService {
     if (existing) return { duplicate: true };
     await this.prisma.paymentWebhookEvent.create({
       data: {
-        provider: 'development',
+        provider: this.provider.name,
         providerEventId: event.eventId,
         signature: input.signature,
         payload: event,

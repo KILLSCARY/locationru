@@ -48,6 +48,13 @@ export interface ApplicationConfig {
     globalCommissionBasisPoints: number;
     minimumCommissionKopecks: number;
   };
+  payments: {
+    provider: 'development' | 'http';
+    apiBaseUrl: string;
+    apiKey: string;
+    webhookSecret: string;
+    requestTimeoutMs: number;
+  };
   realtime: {
     locationEventIntervalSeconds: number;
     outboxPollIntervalMs: number;
@@ -136,6 +143,14 @@ export default (): ApplicationConfig => ({
     minimumCommissionKopecks: Number(
       process.env.FINANCE_MIN_COMMISSION_KOPECKS ?? 0,
     ),
+  },
+  payments: {
+    provider: (process.env.PAYMENTS_PROVIDER ??
+      'development') as ApplicationConfig['payments']['provider'],
+    apiBaseUrl: process.env.PAYMENTS_API_BASE_URL ?? '',
+    apiKey: process.env.PAYMENTS_API_KEY ?? '',
+    webhookSecret: process.env.PAYMENTS_WEBHOOK_SECRET ?? '',
+    requestTimeoutMs: Number(process.env.PAYMENTS_REQUEST_TIMEOUT_MS ?? 10_000),
   },
   realtime: {
     locationEventIntervalSeconds: Number(

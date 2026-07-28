@@ -14,6 +14,8 @@ import type {
 export class DevelopmentPaymentProvider
   implements PaymentProvider, OnModuleInit
 {
+  readonly name = 'development';
+
   private readonly payments = new Map<string, ProviderPayment>();
 
   constructor(private readonly config: ConfigService) {}
