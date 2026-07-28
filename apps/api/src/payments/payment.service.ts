@@ -56,6 +56,7 @@ export class PaymentService {
         code: 'PAYMENT_INTENT_NOT_FOUND',
         message: 'Payment intent was not found',
       });
+    this.assertActiveProvider(intent.provider);
     return this.provider.getPaymentStatus(intent.providerPaymentId);
   }
 
@@ -194,12 +195,27 @@ export class PaymentService {
         code: 'PAYMENT_INTENT_NOT_FOUND',
         message: 'Payment intent was not found',
       });
+    this.assertActiveProvider(intent.provider);
     if (intent.status === PaymentIntentStatus.REFUNDED)
       throw new ConflictException({
         code: 'PAYMENT_ALREADY_REFUNDED',
         message: 'Payment has already been refunded',
       });
     return intent;
+  }
+
+  /**
+   * A payment intent stores the provider that created it. Operations that reuse
+   * the stored `providerPaymentId` must run against that same provider, so a
+   * change of `PAYMENTS_PROVIDER` while an intent is unsettled fails loudly
+   * instead of sending the id to the wrong gateway.
+   */
+  private assertActiveProvider(intentProvider: string): void {
+    if (intentProvider !== this.provider.name)
+      throw new ConflictException({
+        code: 'PAYMENT_PROVIDER_MISMATCH',
+        message: `Payment intent was created with provider "${intentProvider}" but "${this.provider.name}" is active`,
+      });
   }
 
   private async appendTransaction(

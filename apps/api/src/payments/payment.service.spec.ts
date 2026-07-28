@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 
 import { DevelopmentPaymentProvider } from './development-payment.provider.js';
+import { HttpPaymentProvider } from './http-payment.provider.js';
 import { PaymentService } from './payment.service.js';
 
 class PaymentPrismaFake {
@@ -122,5 +123,37 @@ describe('Payment architecture', () => {
 
     expect(first).toEqual({ duplicate: false });
     expect(repeated).toEqual({ duplicate: true });
+  });
+
+  it('refuses to operate on an intent created by another provider', async () => {
+    const intent = await service.createPayment({
+      tripId: 'trip-2',
+      amountKopecks: 500,
+      idempotencyKey: 'create-2',
+    });
+
+    // Same stored intents, but a provider with a different name is now active.
+    const httpProvider = new HttpPaymentProvider(
+      new ConfigService({
+        payments: {
+          apiBaseUrl: 'https://gateway.example/v1/',
+          apiKey: 'k',
+          webhookSecret: 'a-sufficiently-long-secret',
+          requestTimeoutMs: 10_000,
+        },
+      }),
+    );
+    const switched = new PaymentService(httpProvider, prisma as never);
+
+    await expect(
+      switched.capturePayment(intent.id as string, 'capture-2'),
+    ).rejects.toMatchObject({
+      response: { code: 'PAYMENT_PROVIDER_MISMATCH' },
+    });
+    await expect(
+      switched.getPaymentStatus(intent.id as string),
+    ).rejects.toMatchObject({
+      response: { code: 'PAYMENT_PROVIDER_MISMATCH' },
+    });
   });
 });
