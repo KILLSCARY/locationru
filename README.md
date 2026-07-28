@@ -126,6 +126,13 @@ docker compose exec postgres psql -U resilient_taxi -d resilient_taxi \
 - `infrastructure` — конфигурация Docker, PostgreSQL и Redis
 - `docs` — архитектурная и предметная документация
 
+## Развёртывание
+
+Продовые Docker-топологии и пошаговый гайд по деплою на Yandex Cloud:
+[`docs/deploy/yandex-cloud.md`](docs/deploy/yandex-cloud.md)
+(`docker-compose.prod.yml` — всё на одной ВМ, `docker-compose.managed.yml` —
+с managed-БД).
+
 ## Дальнейшее развитие
 
 Текущее состояние и план работ по этапам описаны в

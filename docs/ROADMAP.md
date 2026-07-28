@@ -171,7 +171,9 @@ Seam маршрутизации готов: геопоиск-предфильт�
 - [ ] Наблюдаемость: структурные логи (частично есть), метрики, трейсинг.
 - [ ] Интеграционные тесты PostGIS в CI (`RUN_POSTGIS_INTEGRATION=true`) —
       требуют сервиса PostgreSQL/PostGIS в workflow.
-- [ ] Production-конфигурация Docker и деплой.
+- [x] Production-конфигурация Docker и гайд по деплою на Yandex Cloud
+      (`docker-compose.prod.yml`, `docker-compose.managed.yml`,
+      `docs/deploy/yandex-cloud.md`).
 - [ ] Документация в зарезервированном разделе `docs/geo/`.
 
 ---
