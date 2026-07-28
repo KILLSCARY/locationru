@@ -3,6 +3,14 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service.js';
 import { TripStatus } from '../generated/prisma/client.js';
 import { DispatchService, rankDispatchCandidates } from './dispatch.service.js';
+import { StraightLineRouteEstimator } from './routing/straight-line-route-estimator.js';
+
+const coordinates = {
+  driverLongitude: 37.61,
+  driverLatitude: 55.75,
+  pickupLongitude: 37.62,
+  pickupLatitude: 55.75,
+};
 
 class InMemoryDispatchPrisma {
   candidateRows: Array<{
@@ -10,6 +18,10 @@ class InMemoryDispatchPrisma {
     driverId: string;
     estimatedPickupSeconds: number;
     rating: number;
+    driverLongitude: number;
+    driverLatitude: number;
+    pickupLongitude: number;
+    pickupLatitude: number;
   }> = [];
   readonly queryCalls: Array<{ parameters: unknown[]; query: string }> = [];
   readonly attempts: Array<Record<string, unknown>> = [];
@@ -102,17 +114,20 @@ describe('DispatchService', () => {
         estimatedPickupSeconds: 240,
         distanceMeters: 1_500,
         rating: 4.5,
+        ...coordinates,
       },
       {
         driverId: 'driver-high-rating',
         estimatedPickupSeconds: 240,
         distanceMeters: 1_500,
         rating: 4.9,
+        ...coordinates,
       },
     ];
     const service = new DispatchService(
       dispatchConfig(),
       prisma as unknown as PrismaService,
+      new StraightLineRouteEstimator(),
     );
 
     const result = await service.findCandidates({ tripId: 'trip-1' });
@@ -148,11 +163,13 @@ describe('DispatchService', () => {
         estimatedPickupSeconds: 120,
         distanceMeters: 900,
         rating: 5,
+        ...coordinates,
       },
     ];
     const service = new DispatchService(
       dispatchConfig(),
       prisma as unknown as PrismaService,
+      new StraightLineRouteEstimator(),
     );
 
     await service.findCandidates({

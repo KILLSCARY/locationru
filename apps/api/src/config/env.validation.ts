@@ -87,6 +87,29 @@ export const environmentValidationSchema = Joi.object({
     .min(Joi.ref('DISPATCH_INITIAL_RADIUS_METERS'))
     .default(5_000),
   DISPATCH_RADIUS_MULTIPLIER: Joi.number().greater(1).default(2),
+  // Straight-line ETA is a valid production model, so it is not forced to http.
+  DISPATCH_ROUTING_PROVIDER: Joi.string()
+    .valid('straight-line', 'http')
+    .default('straight-line'),
+  DISPATCH_ROUTING_API_BASE_URL: Joi.string()
+    .uri({ scheme: ['http', 'https'] })
+    .when('DISPATCH_ROUTING_PROVIDER', {
+      is: 'http',
+      then: Joi.required(),
+      otherwise: Joi.optional(),
+    }),
+  DISPATCH_ROUTING_API_KEY: Joi.string()
+    .min(1)
+    .when('DISPATCH_ROUTING_PROVIDER', {
+      is: 'http',
+      then: Joi.required(),
+      otherwise: Joi.optional(),
+    }),
+  DISPATCH_ROUTING_REQUEST_TIMEOUT_MS: Joi.number()
+    .integer()
+    .min(500)
+    .max(30_000)
+    .default(3_000),
   BIDS_TTL_SECONDS: Joi.number().integer().min(15).default(120),
   FINANCE_GLOBAL_COMMISSION_BASIS_POINTS: Joi.number()
     .integer()

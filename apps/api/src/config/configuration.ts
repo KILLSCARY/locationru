@@ -47,6 +47,10 @@ export interface ApplicationConfig {
     maxCandidates: number;
     maxRadiusMeters: number;
     radiusMultiplier: number;
+    routingProvider: 'straight-line' | 'http';
+    routingApiBaseUrl: string;
+    routingApiKey: string;
+    routingRequestTimeoutMs: number;
   };
   bids: {
     ttlSeconds: number;
@@ -147,6 +151,13 @@ export default (): ApplicationConfig => ({
     maxCandidates: Number(process.env.DISPATCH_MAX_CANDIDATES ?? 10),
     maxRadiusMeters: Number(process.env.DISPATCH_MAX_RADIUS_METERS ?? 5_000),
     radiusMultiplier: Number(process.env.DISPATCH_RADIUS_MULTIPLIER ?? 2),
+    routingProvider: (process.env.DISPATCH_ROUTING_PROVIDER ??
+      'straight-line') as ApplicationConfig['dispatch']['routingProvider'],
+    routingApiBaseUrl: process.env.DISPATCH_ROUTING_API_BASE_URL ?? '',
+    routingApiKey: process.env.DISPATCH_ROUTING_API_KEY ?? '',
+    routingRequestTimeoutMs: Number(
+      process.env.DISPATCH_ROUTING_REQUEST_TIMEOUT_MS ?? 3_000,
+    ),
   },
   bids: {
     ttlSeconds: Number(process.env.BIDS_TTL_SECONDS ?? 120),

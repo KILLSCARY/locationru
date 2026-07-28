@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { PrismaService } from '../src/database/prisma.service.js';
 import { DispatchService } from '../src/dispatch/dispatch.service.js';
+import { StraightLineRouteEstimator } from '../src/dispatch/routing/straight-line-route-estimator.js';
 
 const describePostgis =
   process.env.RUN_POSTGIS_INTEGRATION === 'true' ? describe : describe.skip;
@@ -31,6 +32,7 @@ describePostgis('DispatchService PostGIS integration', () => {
         },
       }),
       prisma,
+      new StraightLineRouteEstimator(),
     );
   });
 
