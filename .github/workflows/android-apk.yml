@@ -5,6 +5,11 @@ name: Android APK
 # на каждый PR не гоняется, чтобы не замедлять основной CI.
 on:
   workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: 'API base URL for the dev flavor (leave empty for the placeholder default)'
+        required: false
+        default: ''
   push:
     # `claude/what-is-this-z7pp43` is temporary: it lets the APK build run on
     # the feature branch before merge. Remove it once merged to master.
@@ -41,6 +46,8 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Assemble dev debug APK
+        env:
+          DRIVER_DEV_API_BASE_URL: ${{ github.event.inputs.api_base_url }}
         run: ./gradlew :app:assembleDevDebug --no-daemon --stacktrace
 
       - name: Upload APK

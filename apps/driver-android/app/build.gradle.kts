@@ -6,6 +6,18 @@ plugins {
     id("com.google.dagger.hilt.android")
 }
 
+// Resolves the API base URL for a flavor, in order of precedence:
+// Gradle property (-PdriverDevApiBaseUrl=...), environment variable
+// (DRIVER_DEV_API_BASE_URL), then the placeholder default. Lets CI and local
+// builds target a real backend without editing this file.
+fun apiBaseUrl(flavor: String, default: String): String {
+    val property = "driver${flavor.replaceFirstChar(Char::uppercase)}ApiBaseUrl"
+    val environment = "DRIVER_${flavor.uppercase()}_API_BASE_URL"
+    return (project.findProperty(property) as String?)?.takeIf { it.isNotBlank() }
+        ?: System.getenv(environment)?.takeIf { it.isNotBlank() }
+        ?: default
+}
+
 android {
     namespace = "ru.location.resilienttaxi.driver"
     compileSdk = 36
@@ -25,11 +37,13 @@ android {
             dimension = "environment"
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
-            buildConfigField("String", "API_BASE_URL", "\"https://api-dev.example.invalid/api/v1/\"")
+            val url = apiBaseUrl("dev", "https://api-dev.example.invalid/api/v1/")
+            buildConfigField("String", "API_BASE_URL", "\"$url\"")
         }
         create("prod") {
             dimension = "environment"
-            buildConfigField("String", "API_BASE_URL", "\"https://api.example.invalid/api/v1/\"")
+            val url = apiBaseUrl("prod", "https://api.example.invalid/api/v1/")
+            buildConfigField("String", "API_BASE_URL", "\"$url\"")
         }
     }
 

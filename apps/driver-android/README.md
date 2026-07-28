@@ -30,7 +30,17 @@ to `master`, then download the `resilient-taxi-driver-dev-debug` artifact and
 sideload the `.apk`. Locally, `./gradlew :app:assembleDevDebug` writes it to
 `app/build/outputs/apk/dev/debug/`.
 
-To reach a real backend, override the placeholder `API_BASE_URL` in the `dev`
-flavor (`app/build.gradle.kts`) with a host the phone can actually reach. In
-development the OTP code is written to the API log, not sent by SMS, until a
-real SMS gateway is wired in.
+To reach a real backend, set the API base URL at build time instead of editing
+the code — the `dev`/`prod` flavors resolve it in this order: Gradle property,
+environment variable, then the placeholder default.
+
+```bash
+# Gradle property
+./gradlew :app:assembleDevDebug -PdriverDevApiBaseUrl=https://api.example.com/api/v1/
+# or environment variable
+DRIVER_DEV_API_BASE_URL=https://api.example.com/api/v1/ ./gradlew :app:assembleDevDebug
+```
+
+The `Android APK` workflow exposes the same value as a `api_base_url` input on
+manual runs. In development the OTP code is written to the API log, not sent by
+SMS, until a real SMS gateway is wired in.
