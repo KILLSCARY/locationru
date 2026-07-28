@@ -118,3 +118,8 @@ docker compose exec postgres psql -U resilient_taxi -d resilient_taxi \
 - `packages/config` — общая конфигурация
 - `infrastructure` — конфигурация Docker, PostgreSQL и Redis
 - `docs` — архитектурная и предметная документация
+
+## Дальнейшее развитие
+
+Текущее состояние и план работ по этапам описаны в
+[`docs/ROADMAP.md`](docs/ROADMAP.md).
