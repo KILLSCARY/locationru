@@ -22,6 +22,29 @@ export const environmentValidationSchema = Joi.object({
   AUTH_OTP_MAX_ATTEMPTS: Joi.number().integer().min(1).default(5),
   AUTH_OTP_REQUEST_LIMIT: Joi.number().integer().min(1).default(3),
   AUTH_OTP_REQUEST_WINDOW_SECONDS: Joi.number().integer().min(1).default(60),
+  SMS_PROVIDER: Joi.string()
+    .valid('development', 'http')
+    .default('development')
+    // The development provider only logs OTP codes; production needs a gateway.
+    .when('NODE_ENV', { is: 'production', then: Joi.valid('http') }),
+  SMS_API_BASE_URL: Joi.string()
+    .uri({ scheme: ['http', 'https'] })
+    .when('SMS_PROVIDER', {
+      is: 'http',
+      then: Joi.required(),
+      otherwise: Joi.optional(),
+    }),
+  SMS_API_KEY: Joi.string().min(1).when('SMS_PROVIDER', {
+    is: 'http',
+    then: Joi.required(),
+    otherwise: Joi.optional(),
+  }),
+  SMS_SENDER: Joi.string().allow('').default(''),
+  SMS_REQUEST_TIMEOUT_MS: Joi.number()
+    .integer()
+    .min(1_000)
+    .max(60_000)
+    .default(10_000),
   TRIPS_MIN_PASSENGER_PRICE_KOPECKS: Joi.number()
     .integer()
     .min(1)

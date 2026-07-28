@@ -19,6 +19,13 @@ export interface ApplicationConfig {
     otpTtlSeconds: number;
     refreshTokenTtlSeconds: number;
   };
+  sms: {
+    provider: 'development' | 'http';
+    apiBaseUrl: string;
+    apiKey: string;
+    sender: string;
+    requestTimeoutMs: number;
+  };
   trips: {
     boardingCodeHashSecret: string;
     boardingCodeMaxAttempts: number;
@@ -88,6 +95,14 @@ export default (): ApplicationConfig => ({
     refreshTokenTtlSeconds: Number(
       process.env.AUTH_REFRESH_TOKEN_TTL_SECONDS ?? 2_592_000,
     ),
+  },
+  sms: {
+    provider: (process.env.SMS_PROVIDER ??
+      'development') as ApplicationConfig['sms']['provider'],
+    apiBaseUrl: process.env.SMS_API_BASE_URL ?? '',
+    apiKey: process.env.SMS_API_KEY ?? '',
+    sender: process.env.SMS_SENDER ?? '',
+    requestTimeoutMs: Number(process.env.SMS_REQUEST_TIMEOUT_MS ?? 10_000),
   },
   trips: {
     boardingCodeHashSecret: process.env.TRIPS_BOARDING_CODE_HASH_SECRET ?? '',

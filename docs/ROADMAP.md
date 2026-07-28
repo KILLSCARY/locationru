@@ -72,11 +72,22 @@
 - [ ] E2E-тесты сценариев успех/отказ/возврат/повторный вебхук на реальном
       (sandbox) шлюзе.
 
-### 1.2 SMS-провайдер 🟡 → ✅
+### 1.2 SMS-провайдер 🟡
 
-- [ ] Реализовать боевой `SmsProvider` вместо `DevelopmentSmsProvider`.
+Каркас готов по образцу платежей. Осталось подключить конкретный шлюз.
+
+- [x] Провайдер выбирается фабрикой (`sms-provider.factory.ts`):
+      `development` вне production, `http` — в production.
+- [x] Конфигурация через env + Joi-валидация (`SMS_*`); в production
+      `SMS_PROVIDER=http` обязателен.
+- [x] Боевая заготовка `HttpSmsProvider` с HTTP-клиентом (base URL,
+      авторизация, sender, таймаут); `sendCode` кидает `NotImplemented`,
+      чтобы прод не «терял» OTP молча.
+- [x] `DevelopmentSmsProvider` логирует OTP только при
+      `NODE_ENV=development`.
+- [ ] Реализовать `HttpSmsProvider.sendCode` под конкретный шлюз через
+      хелпер `request()`.
 - [ ] Ретраи и обработка ошибок доставки, метрики отправки.
-- [ ] Не логировать OTP вне `NODE_ENV=development`.
 
 ### 1.3 Диспетчеризация: реальный routing 🟡 → ✅
 
