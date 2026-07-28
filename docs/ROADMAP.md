@@ -165,6 +165,9 @@ Seam маршрутизации готов: геопоиск-предфильт�
 - [x] CI (`.github/workflows/ci.yml`): на каждый PR и push в `master`
       прогоняются `format:check` / `lint` / `typecheck` / `test` для backend
       и `:domain:test` / `ktlintCheck` / `detekt` для driver-android.
+- [x] Сборка APK (`.github/workflows/android-apk.yml`): по кнопке и на push
+      в `master` собирается debug-APK приложения водителя и выкладывается
+      артефактом для установки.
 - [ ] Наблюдаемость: структурные логи (частично есть), метрики, трейсинг.
 - [ ] Интеграционные тесты PostGIS в CI (`RUN_POSTGIS_INTEGRATION=true`) —
       требуют сервиса PostgreSQL/PostGIS в workflow.
