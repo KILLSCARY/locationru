@@ -36,5 +36,10 @@ export type DriverBid = {
   distanceToPickupMeters: number;
   expiresAt: string;
   driver: { firstName: string; lastName: string; rating: number };
-  vehicle: { brand: string; model: string; color: string; registrationNumber: string };
+  vehicle: {
+    brand: string;
+    model: string;
+    color: string;
+    registrationNumber: string;
+  };
 };
