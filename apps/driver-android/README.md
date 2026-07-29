@@ -1,9 +1,8 @@
 # Resilient Taxi Driver Android
 
 Android driver client built with Kotlin, Jetpack Compose, Material 3, Hilt,
-Retrofit, Room, DataStore and WorkManager. `minSdk` is **23**, because the
-current stable WorkManager line requires API 23+ and can use JobScheduler on
-every supported device.
+Retrofit, Room, DataStore and WorkManager. The library modules target
+`minSdk` **23**; the `:app` module is **26**, required by the Yandex MapKit SDK.
 
 ## Variants
 
