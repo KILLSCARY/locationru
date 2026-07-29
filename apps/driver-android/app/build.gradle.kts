@@ -18,6 +18,14 @@ fun apiBaseUrl(flavor: String, default: String): String {
         ?: default
 }
 
+// Yandex MapKit API key, from a Gradle property (-PmapkitApiKey=...) or the
+// MAPKIT_API_KEY environment variable (a GitHub Actions secret in CI). Empty
+// when unset — the app then shows a placeholder instead of the map.
+fun mapkitApiKey(): String =
+    (project.findProperty("mapkitApiKey") as String?)?.takeIf { it.isNotBlank() }
+        ?: System.getenv("MAPKIT_API_KEY")?.takeIf { it.isNotBlank() }
+        ?: ""
+
 android {
     namespace = "ru.location.resilienttaxi.driver"
     compileSdk = 36
@@ -29,6 +37,7 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "MAPKIT_API_KEY", "\"${mapkitApiKey()}\"")
     }
 
     flavorDimensions += "environment"
@@ -79,7 +88,9 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.navigation:navigation-compose:2.9.6")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
+    implementation("com.yandex.android:maps.mobile:4.42.0-lite")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-kotlinx-serialization:2.11.0")

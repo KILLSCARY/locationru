@@ -51,6 +51,7 @@ jobs:
           # produce a phone-ready APK. Remove before merging to master; the
           # workflow_dispatch input takes precedence when provided.
           DRIVER_DEV_API_BASE_URL: ${{ github.event.inputs.api_base_url || 'https://51.250.39.114.sslip.io/api/v1/' }}
+          MAPKIT_API_KEY: ${{ secrets.MAPKIT_API_KEY }}
         run: ./gradlew :app:assembleDevDebug --no-daemon --stacktrace
 
       - name: Upload APK
