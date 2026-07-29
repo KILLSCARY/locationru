@@ -36,7 +36,15 @@ object NetworkModule {
                                 .build(),
                         )
                     }.build(),
-            ).addConverterFactory(Json { ignoreUnknownKeys = true }.asConverterFactory("application/json".toMediaType()))
+            ).addConverterFactory(
+                Json {
+                    ignoreUnknownKeys = true
+                    // Fields left at their default value (e.g. platform =
+                    // "ANDROID") must still be sent, or server-side validation
+                    // rejects the incomplete body.
+                    encodeDefaults = true
+                }.asConverterFactory("application/json".toMediaType()),
+            )
             .build()
 
     @Provides

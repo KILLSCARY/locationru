@@ -264,7 +264,10 @@ class DriverWorkspaceViewModel
                 .apply()
         }
 
-        private fun deviceId(): String = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+        private fun deviceId(): String {
+            val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+            return if (androidId.isNullOrBlank()) "android-device" else androidId
+        }
 
         private companion object {
             const val PREFERENCES = "driver_workspace"
