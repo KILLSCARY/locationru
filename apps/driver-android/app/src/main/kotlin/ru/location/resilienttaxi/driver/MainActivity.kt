@@ -327,15 +327,20 @@ private fun TripCard(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(16.dp)) {
             Text(
-                "Маршрут: ${trip.pickupAddress} → координаты назначения будут доступны после выбора",
+                "Подача: ${trip.pickupAddress}",
                 style = MaterialTheme.typography.titleMedium,
             )
+            Text("Назначение: ${trip.destinationAddress}", style = MaterialTheme.typography.titleMedium)
             Text("Цена пассажира: ${trip.passengerPriceKopecks} коп.", color = InkMuted)
             Text(
                 "Оценочная комиссия (15%): ${fare.commissionKopecks} коп.; чистый доход: ${fare.driverPayoutKopecks} коп.",
                 color = InkMuted,
             )
             Text("До пассажира: ${trip.distanceToPickupMeters} м, ~${trip.estimatedPickupSeconds} сек", color = InkMuted)
+            Text(
+                "Длина поездки: ${trip.estimatedDistanceMeters} м, ~${trip.estimatedDurationSeconds / 60} мин",
+                color = InkMuted,
+            )
             Divider(color = InkLine)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(

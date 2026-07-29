@@ -221,6 +221,171 @@ export type CreateDriverBidRequest = z.infer<
 export const DriverBidResponseSchema = z.object({ bid: DriverBidSchema });
 export type DriverBidResponse = z.infer<typeof DriverBidResponseSchema>;
 
+// ---------------------------------------------------------------------------
+// Maps: geocoding, address search and routing.
+//
+// These contracts are provider-agnostic: business code depends on them, never
+// on a concrete maps SDK. `provider` records which backend produced a result
+// so callers can reason about freshness and cost without importing an SDK.
+// ---------------------------------------------------------------------------
+
+export const GeoPointSchema = z.object({
+  latitude: z.number().finite().min(-90).max(90),
+  longitude: z.number().finite().min(-180).max(180),
+});
+export type GeoPoint = z.infer<typeof GeoPointSchema>;
+
+export const TransportModeSchema = z.enum(['driving', 'walking']);
+export type TransportMode = z.infer<typeof TransportModeSchema>;
+
+export const AddressSuggestionSchema = z.object({
+  id: z.string().min(1).max(256),
+  title: z.string().min(1).max(512),
+  subtitle: z.string().max(512),
+  fullAddress: z.string().min(1).max(1_024),
+  location: GeoPointSchema.nullable(),
+  provider: z.string().min(1).max(64),
+  providerPlaceId: z.string().min(1).max(256).nullable(),
+});
+export type AddressSuggestion = z.infer<typeof AddressSuggestionSchema>;
+
+export const AddressComponentsSchema = z.object({
+  country: z.string().max(128).nullable(),
+  region: z.string().max(128).nullable(),
+  city: z.string().max(128).nullable(),
+  street: z.string().max(256).nullable(),
+  house: z.string().max(64).nullable(),
+  postalCode: z.string().max(32).nullable(),
+});
+export type AddressComponents = z.infer<typeof AddressComponentsSchema>;
+
+export const ResolvedAddressSchema = z.object({
+  formattedAddress: z.string().min(1).max(1_024),
+  location: GeoPointSchema,
+  components: AddressComponentsSchema,
+  provider: z.string().min(1).max(64),
+  providerPlaceId: z.string().min(1).max(256).nullable(),
+});
+export type ResolvedAddress = z.infer<typeof ResolvedAddressSchema>;
+
+export const RouteWaypointSchema = GeoPointSchema.extend({
+  sequence: z.number().int().min(0).max(24),
+});
+export type RouteWaypoint = z.infer<typeof RouteWaypointSchema>;
+
+export const RouteOptionsSchema = z.object({
+  transportMode: TransportModeSchema.default('driving'),
+  avoidTolls: z.boolean().default(false),
+  avoidUnpavedRoads: z.boolean().default(false),
+});
+export type RouteOptions = z.infer<typeof RouteOptionsSchema>;
+
+export const RouteRequestSchema = z.object({
+  origin: GeoPointSchema,
+  destination: GeoPointSchema,
+  waypoints: z.array(RouteWaypointSchema).max(10).default([]),
+  transportMode: TransportModeSchema.default('driving'),
+  avoidTolls: z.boolean().default(false),
+  avoidUnpavedRoads: z.boolean().default(false),
+});
+export type RouteRequest = z.infer<typeof RouteRequestSchema>;
+
+/** GeoJSON-style bounding box: [west, south, east, north]. */
+export const GeoBoundsSchema = z.object({
+  minLatitude: z.number().finite().min(-90).max(90),
+  minLongitude: z.number().finite().min(-180).max(180),
+  maxLatitude: z.number().finite().min(-90).max(90),
+  maxLongitude: z.number().finite().min(-180).max(180),
+});
+export type GeoBounds = z.infer<typeof GeoBoundsSchema>;
+
+export const RouteResultSchema = z.object({
+  distanceMeters: z.number().int().nonnegative(),
+  durationSeconds: z.number().int().nonnegative(),
+  /** Ordered polyline of the route as GeoPoints (GeoJSON LineString order). */
+  geometry: z.array(GeoPointSchema).min(2),
+  encodedPolyline: z.string().nullable(),
+  bounds: GeoBoundsSchema,
+  provider: z.string().min(1).max(64),
+  providerRouteId: z.string().min(1).max(256).nullable(),
+  warnings: z.array(z.string().max(512)),
+  snappedWaypoints: z.array(GeoPointSchema),
+});
+export type RouteResult = z.infer<typeof RouteResultSchema>;
+
+export const AddressSuggestionsQuerySchema = z.object({
+  query: z.string().min(3).max(256),
+  latitude: z.number().finite().min(-90).max(90).optional(),
+  longitude: z.number().finite().min(-180).max(180).optional(),
+  limit: z.number().int().min(1).max(10).optional(),
+});
+export type AddressSuggestionsQuery = z.infer<
+  typeof AddressSuggestionsQuerySchema
+>;
+
+export const AddressSuggestionsResponseSchema = z.object({
+  suggestions: z.array(AddressSuggestionSchema),
+  provider: z.string().min(1).max(64),
+});
+export type AddressSuggestionsResponse = z.infer<
+  typeof AddressSuggestionsResponseSchema
+>;
+
+export const GeocodeRequestSchema = z.object({
+  address: z.string().min(3).max(1_024),
+});
+export type GeocodeRequest = z.infer<typeof GeocodeRequestSchema>;
+
+export const GeocodeResponseSchema = z.object({
+  address: ResolvedAddressSchema,
+});
+export type GeocodeResponse = z.infer<typeof GeocodeResponseSchema>;
+
+export const ReverseGeocodeRequestSchema = GeoPointSchema;
+export type ReverseGeocodeRequest = z.infer<typeof ReverseGeocodeRequestSchema>;
+
+export const ReverseGeocodeResponseSchema = GeocodeResponseSchema;
+export type ReverseGeocodeResponse = z.infer<
+  typeof ReverseGeocodeResponseSchema
+>;
+
+export const RouteEstimateResponseSchema = z.object({
+  distanceMeters: z.number().int().nonnegative(),
+  durationSeconds: z.number().int().nonnegative(),
+  bounds: GeoBoundsSchema,
+  provider: z.string().min(1).max(64),
+});
+export type RouteEstimateResponse = z.infer<typeof RouteEstimateResponseSchema>;
+
+export const RouteBuildResponseSchema = z.object({ route: RouteResultSchema });
+export type RouteBuildResponse = z.infer<typeof RouteBuildResponseSchema>;
+
+// ---------------------------------------------------------------------------
+// Pricing: a recommended fare range shown to the passenger. It is a suggestion,
+// not the final tariff — the passenger may still name their own price as long
+// as it clears the system minimum.
+// ---------------------------------------------------------------------------
+
+export const PricingEstimateRequestSchema = z.object({
+  distanceMeters: z.number().int().nonnegative().optional(),
+  durationSeconds: z.number().int().nonnegative().optional(),
+  route: RouteRequestSchema.optional(),
+});
+export type PricingEstimateRequest = z.infer<
+  typeof PricingEstimateRequestSchema
+>;
+
+export const PricingEstimateResponseSchema = z.object({
+  recommendedPriceKopecks: KopecksSchema,
+  minimumSuggestedPriceKopecks: KopecksSchema,
+  maximumSuggestedPriceKopecks: KopecksSchema,
+  distanceMeters: z.number().int().nonnegative(),
+  durationSeconds: z.number().int().nonnegative(),
+});
+export type PricingEstimateResponse = z.infer<
+  typeof PricingEstimateResponseSchema
+>;
+
 export const ErrorResponseSchema = z.object({
   code: z.string().min(1),
   message: z.string().min(1),

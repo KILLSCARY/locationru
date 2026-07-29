@@ -6,6 +6,8 @@ export type CreateTripInput = {
   destination: { latitude: number; longitude: number };
   pickupAddress: string;
   destinationAddress: string;
+  pickupPlaceId?: string;
+  destinationPlaceId?: string;
   passengerPriceKopecks: number;
 };
 

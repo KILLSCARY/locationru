@@ -287,10 +287,15 @@ model Trip {
   driverPayoutKopecks      Int?
   pickupLocation           Unsupported("geography(Point, 4326)")
   destinationLocation      Unsupported("geography(Point, 4326)")
+  route                    Unsupported("geography(LineString, 4326)")?
   pickupAddress            String       @db.VarChar(512)
   destinationAddress       String       @db.VarChar(512)
+  pickupPlaceId            String?      @db.VarChar(256)
+  destinationPlaceId       String?      @db.VarChar(256)
   estimatedDistanceMeters  Int
   estimatedDurationSeconds Int
+  routeProvider            String?      @db.VarChar(64)
+  routeBounds              Json?        @db.JsonB
   startedAt                DateTime?    @db.Timestamptz(3)
   completedAt              DateTime?    @db.Timestamptz(3)
   cancelledAt              DateTime?    @db.Timestamptz(3)

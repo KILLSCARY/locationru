@@ -70,6 +70,27 @@ export interface ApplicationConfig {
     locationEventIntervalSeconds: number;
     outboxPollIntervalMs: number;
   };
+  maps: {
+    provider: 'development' | 'yandex';
+    apiKey: string;
+    apiBaseUrl: string;
+    timeoutMs: number;
+    maxRetries: number;
+    userAgent: string;
+    suggestionsTtlSeconds: number;
+    geocodingTtlSeconds: number;
+    routeTtlSeconds: number;
+    suggestionsRateLimitPerMinute: number;
+    routesRateLimitPerMinute: number;
+  };
+  pricing: {
+    baseFareKopecks: number;
+    perKilometerKopecks: number;
+    perMinuteKopecks: number;
+    minimumFareKopecks: number;
+    lowerMultiplierBasisPoints: number;
+    upperMultiplierBasisPoints: number;
+  };
 }
 
 export default (): ApplicationConfig => ({
@@ -184,6 +205,44 @@ export default (): ApplicationConfig => ({
     ),
     outboxPollIntervalMs: Number(
       process.env.REALTIME_OUTBOX_POLL_INTERVAL_MS ?? 1_000,
+    ),
+  },
+  maps: {
+    provider: (process.env.MAPS_PROVIDER ??
+      'development') as ApplicationConfig['maps']['provider'],
+    apiKey: process.env.MAPS_API_KEY ?? '',
+    apiBaseUrl: process.env.MAPS_API_URL ?? 'https://geocode-maps.yandex.ru',
+    timeoutMs: Number(process.env.MAPS_TIMEOUT_MS ?? 5_000),
+    maxRetries: Number(process.env.MAPS_MAX_RETRIES ?? 2),
+    userAgent: process.env.MAPS_USER_AGENT ?? 'ResilientTaxi/1.0',
+    suggestionsTtlSeconds: Number(
+      process.env.MAPS_SUGGESTIONS_TTL_SECONDS ?? 300,
+    ),
+    geocodingTtlSeconds: Number(
+      process.env.MAPS_GEOCODING_TTL_SECONDS ?? 86_400,
+    ),
+    routeTtlSeconds: Number(process.env.MAPS_ROUTE_TTL_SECONDS ?? 1_800),
+    suggestionsRateLimitPerMinute: Number(
+      process.env.MAPS_SUGGESTIONS_RATE_LIMIT_PER_MINUTE ?? 60,
+    ),
+    routesRateLimitPerMinute: Number(
+      process.env.MAPS_ROUTES_RATE_LIMIT_PER_MINUTE ?? 30,
+    ),
+  },
+  pricing: {
+    baseFareKopecks: Number(process.env.PRICING_BASE_FARE_KOPECKS ?? 15_000),
+    perKilometerKopecks: Number(
+      process.env.PRICING_PER_KILOMETER_KOPECKS ?? 3_000,
+    ),
+    perMinuteKopecks: Number(process.env.PRICING_PER_MINUTE_KOPECKS ?? 800),
+    minimumFareKopecks: Number(
+      process.env.PRICING_MINIMUM_FARE_KOPECKS ?? 15_000,
+    ),
+    lowerMultiplierBasisPoints: Number(
+      process.env.PRICING_LOWER_MULTIPLIER_BASIS_POINTS ?? 9_000,
+    ),
+    upperMultiplierBasisPoints: Number(
+      process.env.PRICING_UPPER_MULTIPLIER_BASIS_POINTS ?? 13_000,
     ),
   },
 });

@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import type { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { TripStatus, TripStatusActorType } from '../generated/prisma/client.js';
+import { MapsService } from '../maps/maps.service.js';
 import type { CreateTripDto } from './dto/create-trip.dto.js';
 import { TripService } from './trip.service.js';
 import {
@@ -103,10 +104,32 @@ describe('TripService', () => {
         version: 1,
       }),
     };
+    const mapsService = {
+      buildRoute: async () => ({
+        distanceMeters: 4_200,
+        durationSeconds: 540,
+        geometry: [
+          { latitude: 55.7558, longitude: 37.6173 },
+          { latitude: 55.7517, longitude: 37.6178 },
+        ],
+        encodedPolyline: null,
+        bounds: {
+          minLatitude: 55.7517,
+          minLongitude: 37.6173,
+          maxLatitude: 55.7558,
+          maxLongitude: 37.6178,
+        },
+        provider: 'development',
+        providerRouteId: null,
+        warnings: [],
+        snappedWaypoints: [],
+      }),
+    };
     tripService = new TripService(
       new ConfigService({ trips: { minPassengerPriceKopecks: 10_000 } }),
       prisma as unknown as PrismaService,
       stateMachine as unknown as TripStateMachine,
+      mapsService as unknown as MapsService,
     );
   });
 

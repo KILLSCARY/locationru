@@ -1,119 +1,248 @@
-import { zodResolver } from '@hookform/resolvers/zod';
+import * as Location from 'expo-location';
 import { router } from 'expo-router';
-import { Controller, useForm } from 'react-hook-form';
-import { Button, Text, TextInput } from 'react-native';
-import { z } from 'zod';
+import { useState } from 'react';
+import { Button, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Screen } from '@/components/Screen';
+import { AddressAutocomplete } from '@/features/maps/AddressAutocomplete';
+import type { AddressSuggestion, GeoPoint } from '@/features/maps/types';
+import { estimateRoute } from '@/features/maps/api';
+import { estimatePricing } from '@/features/pricing/api';
 import { createTrip, startSearch } from '@/features/trips/api';
 import { useSessionStore } from '@/store/session';
 
-const coordinates = z.coerce.number().finite();
-const formSchema = z.object({
-  pickupLatitude: coordinates.min(-90).max(90),
-  pickupLongitude: coordinates.min(-180).max(180),
-  destinationLatitude: coordinates.min(-90).max(90),
-  destinationLongitude: coordinates.min(-180).max(180),
-  pickupAddress: z.string().min(2),
-  destinationAddress: z.string().min(2),
-  passengerPriceKopecks: z.coerce.number().int().positive(),
-});
-type FormInput = z.input<typeof formSchema>;
-type FormValues = z.output<typeof formSchema>;
+type ResolvedPoint = {
+  address: string;
+  location: GeoPoint;
+  placeId: string | null;
+};
 
-const fields: Array<{
-  name: keyof FormValues;
-  placeholder: string;
-  numeric?: boolean;
-}> = [
-  {
-    name: 'pickupLatitude',
-    placeholder: 'Широта подачи, например 55.7558',
-    numeric: true,
-  },
-  {
-    name: 'pickupLongitude',
-    placeholder: 'Долгота подачи, например 37.6173',
-    numeric: true,
-  },
-  { name: 'pickupAddress', placeholder: 'Адрес подачи' },
-  {
-    name: 'destinationLatitude',
-    placeholder: 'Широта назначения',
-    numeric: true,
-  },
-  {
-    name: 'destinationLongitude',
-    placeholder: 'Долгота назначения',
-    numeric: true,
-  },
-  { name: 'destinationAddress', placeholder: 'Адрес назначения' },
-  {
-    name: 'passengerPriceKopecks',
-    placeholder: 'Цена в копейках',
-    numeric: true,
-  },
-];
+type RouteAndPrice = {
+  distanceMeters: number;
+  durationSeconds: number;
+  recommendedPriceKopecks: number;
+  minimumSuggestedPriceKopecks: number;
+  maximumSuggestedPriceKopecks: number;
+};
+
+function formatKopecks(kopecks: number): string {
+  return `${(kopecks / 100).toFixed(0)} ₽`;
+}
 
 export default function NewTripScreen() {
   const setActiveTripId = useSessionStore((state) => state.setActiveTripId);
-  const form = useForm<FormInput, unknown, FormValues>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      pickupLatitude: 55.7558,
-      pickupLongitude: 37.6173,
-      destinationLatitude: 55.7512,
-      destinationLongitude: 37.6184,
-      passengerPriceKopecks: 50000,
-    },
-  });
-  const submit = form.handleSubmit(async (values) => {
-    const trip = await createTrip({
-      pickup: {
-        latitude: values.pickupLatitude,
-        longitude: values.pickupLongitude,
-      },
-      destination: {
-        latitude: values.destinationLatitude,
-        longitude: values.destinationLongitude,
-      },
-      pickupAddress: values.pickupAddress,
-      destinationAddress: values.destinationAddress,
-      passengerPriceKopecks: values.passengerPriceKopecks,
-    });
-    await startSearch(trip.id);
-    await setActiveTripId(trip.id);
-    router.replace(`/trip/${trip.id}`);
-  });
+  const [pickup, setPickup] = useState<ResolvedPoint | null>(null);
+  const [destination, setDestination] = useState<ResolvedPoint | null>(null);
+  const [routeAndPrice, setRouteAndPrice] = useState<RouteAndPrice | null>(
+    null,
+  );
+  const [customPriceKopecks, setCustomPriceKopecks] = useState('');
+  const [isEstimating, setIsEstimating] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toResolvedPoint = (
+    suggestion: AddressSuggestion,
+  ): ResolvedPoint | null =>
+    suggestion.location
+      ? {
+          address: suggestion.fullAddress,
+          location: suggestion.location,
+          placeId: suggestion.providerPlaceId,
+        }
+      : null;
+
+  const useCurrentLocationForPickup = async () => {
+    setError(null);
+    setIsLocating(true);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') {
+        setError('Доступ к геолокации не разрешён.');
+        return;
+      }
+      const position = await Location.getCurrentPositionAsync({});
+      const location: GeoPoint = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      };
+      setPickup({
+        address: `Текущее местоположение (${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)})`,
+        location,
+        placeId: null,
+      });
+      setRouteAndPrice(null);
+    } catch {
+      setError('Не удалось определить текущее местоположение.');
+    } finally {
+      setIsLocating(false);
+    }
+  };
+
+  const requestEstimate = async (from: ResolvedPoint, to: ResolvedPoint) => {
+    setError(null);
+    setIsEstimating(true);
+    try {
+      const route = await estimateRoute({
+        origin: from.location,
+        destination: to.location,
+      });
+      const pricing = await estimatePricing({
+        distanceMeters: route.distanceMeters,
+        durationSeconds: route.durationSeconds,
+      });
+      setRouteAndPrice({
+        distanceMeters: route.distanceMeters,
+        durationSeconds: route.durationSeconds,
+        recommendedPriceKopecks: pricing.recommendedPriceKopecks,
+        minimumSuggestedPriceKopecks: pricing.minimumSuggestedPriceKopecks,
+        maximumSuggestedPriceKopecks: pricing.maximumSuggestedPriceKopecks,
+      });
+      setCustomPriceKopecks(String(pricing.recommendedPriceKopecks));
+    } catch {
+      setError('Не удалось рассчитать маршрут и цену.');
+    } finally {
+      setIsEstimating(false);
+    }
+  };
+
+  const onSelectPickup = (suggestion: AddressSuggestion) => {
+    const resolved = toResolvedPoint(suggestion);
+    if (!resolved) return;
+    setPickup(resolved);
+    setRouteAndPrice(null);
+    if (destination) void requestEstimate(resolved, destination);
+  };
+
+  const onSelectDestination = (suggestion: AddressSuggestion) => {
+    const resolved = toResolvedPoint(suggestion);
+    if (!resolved) return;
+    setDestination(resolved);
+    setRouteAndPrice(null);
+    if (pickup) void requestEstimate(pickup, resolved);
+  };
+
+  const submit = async () => {
+    if (!pickup || !destination) {
+      setError('Выберите адрес подачи и назначения из подсказок.');
+      return;
+    }
+    const price = Number.parseInt(customPriceKopecks, 10);
+    if (!Number.isFinite(price) || price <= 0) {
+      setError('Укажите цену поездки.');
+      return;
+    }
+    if (routeAndPrice && price < routeAndPrice.minimumSuggestedPriceKopecks) {
+      setError(
+        `Цена не может быть ниже ${formatKopecks(routeAndPrice.minimumSuggestedPriceKopecks)}.`,
+      );
+      return;
+    }
+
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      const trip = await createTrip({
+        pickup: pickup.location,
+        destination: destination.location,
+        pickupAddress: pickup.address,
+        destinationAddress: destination.address,
+        ...(pickup.placeId ? { pickupPlaceId: pickup.placeId } : {}),
+        ...(destination.placeId
+          ? { destinationPlaceId: destination.placeId }
+          : {}),
+        passengerPriceKopecks: price,
+      });
+      await startSearch(trip.id);
+      await setActiveTripId(trip.id);
+      router.replace(`/trip/${trip.id}`);
+    } catch {
+      setError('Не удалось создать заказ.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <Screen>
-      <Text>
-        Создание заказа. Пока используются текстовые координаты и адреса.
-      </Text>
-      {fields.map(({ name, placeholder, numeric }) => (
-        <Controller
-          key={name}
-          control={form.control}
-          name={name}
-          render={({ field }) => (
-            <TextInput
-              placeholder={placeholder}
-              keyboardType={numeric ? 'decimal-pad' : 'default'}
-              value={field.value === undefined ? '' : String(field.value)}
-              onChangeText={field.onChange}
-            />
-          )}
+      <Text>Куда поедем?</Text>
+
+      <View style={styles.field}>
+        <Text style={styles.label}>Откуда</Text>
+        <AddressAutocomplete
+          placeholder="Начните вводить адрес подачи"
+          resolvedAddress={pickup?.address ?? null}
+          bias={destination?.location}
+          onSelect={onSelectPickup}
         />
-      ))}
-      {form.formState.errors.root && (
-        <Text>{form.formState.errors.root.message}</Text>
+        <Button
+          title={
+            isLocating ? 'Определяем…' : 'Использовать текущее местоположение'
+          }
+          onPress={useCurrentLocationForPickup}
+          disabled={isLocating}
+        />
+      </View>
+
+      <View style={styles.field}>
+        <Text style={styles.label}>Куда</Text>
+        <AddressAutocomplete
+          placeholder="Начните вводить адрес назначения"
+          resolvedAddress={destination?.address ?? null}
+          bias={pickup?.location}
+          onSelect={onSelectDestination}
+        />
+      </View>
+
+      {isEstimating && <Text>Считаем маршрут и цену…</Text>}
+
+      {routeAndPrice && (
+        <View style={styles.field}>
+          <Text>
+            Расстояние: {(routeAndPrice.distanceMeters / 1000).toFixed(1)} км
+          </Text>
+          <Text>
+            Время в пути: {Math.round(routeAndPrice.durationSeconds / 60)} мин
+          </Text>
+          <Text>
+            Рекомендуемая цена:{' '}
+            {formatKopecks(routeAndPrice.recommendedPriceKopecks)} (
+            {formatKopecks(routeAndPrice.minimumSuggestedPriceKopecks)}–
+            {formatKopecks(routeAndPrice.maximumSuggestedPriceKopecks)})
+          </Text>
+        </View>
       )}
+
+      <View style={styles.field}>
+        <Text style={styles.label}>Ваша цена (в копейках)</Text>
+        <TextInput
+          placeholder="Цена в копейках"
+          keyboardType="number-pad"
+          value={customPriceKopecks}
+          onChangeText={setCustomPriceKopecks}
+          style={styles.input}
+        />
+      </View>
+
+      {error && <Text style={styles.error}>{error}</Text>}
+
       <Button
-        title={
-          form.formState.isSubmitting ? 'Создаём…' : 'Создать и начать поиск'
-        }
+        title={isSubmitting ? 'Создаём…' : 'Создать и начать поиск'}
         onPress={submit}
-        disabled={form.formState.isSubmitting}
+        disabled={isSubmitting || !pickup || !destination}
       />
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  field: { gap: 8 },
+  label: { fontWeight: '600' },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    padding: 10,
+  },
+  error: { color: '#c0392b' },
+});

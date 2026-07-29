@@ -43,6 +43,9 @@ interface PickupMetrics {
 export interface AvailableDriverTrip extends PickupMetrics {
   passengerPriceKopecks: number;
   pickupAddress: string;
+  destinationAddress: string;
+  estimatedDistanceMeters: number;
+  estimatedDurationSeconds: number;
   tripId: string;
 }
 
@@ -102,6 +105,9 @@ export class BidsService {
           "dispatch_attempts"."tripId" AS "tripId",
           "trips"."passengerPriceKopecks",
           "trips"."pickupAddress",
+          "trips"."destinationAddress",
+          "trips"."estimatedDistanceMeters",
+          "trips"."estimatedDurationSeconds",
           "dispatch_attempt_logs"."estimatedPickupSeconds",
           "dispatch_attempt_logs"."distanceMeters" AS "distanceToPickupMeters"
        FROM "dispatch_attempt_logs"

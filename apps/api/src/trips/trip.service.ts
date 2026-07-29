@@ -12,6 +12,8 @@ import { ConfigService } from '@nestjs/config';
 import type { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { TripStatus, TripStatusActorType } from '../generated/prisma/client.js';
+import { MapsService } from '../maps/maps.service.js';
+import type { RouteRequest, RouteResult } from '../maps/maps.types.js';
 import {
   TripStateMachine,
   type TripTransitionResult,
@@ -97,6 +99,7 @@ export class TripService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly stateMachine: TripStateMachine,
+    private readonly mapsService: MapsService,
   ) {}
 
   async create(
@@ -108,6 +111,11 @@ export class TripService {
     const key = this.normalizeIdempotencyKey(idempotencyKey);
     this.assertMinimumPrice(input.passengerPriceKopecks);
     const requestHash = this.hashRequest(input);
+    // The server always computes distance/duration/geometry; values that might
+    // arrive from the client are never trusted.
+    const route = await this.estimateTripRoute(input);
+    const routeWkt = this.toLineStringWkt(route);
+    const routeBounds = JSON.stringify(route.bounds);
 
     try {
       return await this.prisma.$transaction(async (transaction) => {
@@ -162,14 +170,19 @@ export class TripService {
         const created = await transaction.$queryRawUnsafe<TripSummaryRow[]>(
           `INSERT INTO "trips" (
               "id", "passengerId", "status", "passengerPriceKopecks",
-              "pickupLocation", "destinationLocation", "pickupAddress", "destinationAddress",
-              "estimatedDistanceMeters", "estimatedDurationSeconds", "childSeat", "pet", "luggage", "comment",
+              "pickupLocation", "destinationLocation", "route",
+              "pickupAddress", "destinationAddress", "pickupPlaceId", "destinationPlaceId",
+              "estimatedDistanceMeters", "estimatedDurationSeconds", "routeProvider", "routeBounds",
+              "childSeat", "pet", "luggage", "comment",
               "createdAt", "updatedAt"
            ) VALUES (
               $1, $2, 'DRAFT', $3,
               ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography,
               ST_SetSRID(ST_MakePoint($6, $7), 4326)::geography,
-              $8, $9, 0, 0, $10, $11, $12, $13, NOW(), NOW()
+              ST_GeogFromText($8),
+              $9, $10, $11, $12,
+              $13, $14, $15, $16::jsonb,
+              $17, $18, $19, $20, NOW(), NOW()
            )
            RETURNING "id", "status", "version"`,
           tripId,
@@ -179,8 +192,15 @@ export class TripService {
           input.pickup.latitude,
           input.destination.longitude,
           input.destination.latitude,
+          routeWkt,
           input.pickupAddress,
           input.destinationAddress,
+          input.pickupPlaceId ?? null,
+          input.destinationPlaceId ?? null,
+          route.distanceMeters,
+          route.durationSeconds,
+          route.provider,
+          routeBounds,
           options.childSeat ?? false,
           options.pet ?? false,
           options.luggage ?? false,
@@ -384,6 +404,41 @@ export class TripService {
     }
 
     return trip;
+  }
+
+  /**
+   * Builds a route from pickup through any stops to the destination. Distance,
+   * duration and geometry always come from the maps provider — never from the
+   * client — so pricing and dispatch reason about server-owned figures.
+   */
+  private async estimateTripRoute(input: CreateTripDto): Promise<RouteResult> {
+    const request: RouteRequest = {
+      origin: {
+        latitude: input.pickup.latitude,
+        longitude: input.pickup.longitude,
+      },
+      destination: {
+        latitude: input.destination.latitude,
+        longitude: input.destination.longitude,
+      },
+      waypoints: (input.stops ?? []).map((stop, index) => ({
+        latitude: stop.location.latitude,
+        longitude: stop.location.longitude,
+        sequence: index + 1,
+      })),
+      transportMode: 'driving',
+      avoidTolls: false,
+      avoidUnpavedRoads: false,
+    };
+    return this.mapsService.buildRoute(request);
+  }
+
+  /** WKT LINESTRING for ST_GeogFromText, bound as a single query parameter. */
+  private toLineStringWkt(route: RouteResult): string {
+    const points = route.geometry
+      .map((point) => `${point.longitude} ${point.latitude}`)
+      .join(', ');
+    return `SRID=4326;LINESTRING(${points})`;
   }
 
   private assertPassenger(user: AuthenticatedUser): void {

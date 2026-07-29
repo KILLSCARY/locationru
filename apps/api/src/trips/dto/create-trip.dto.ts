@@ -31,6 +31,16 @@ export class CreateTripDto {
   @MaxLength(512)
   destinationAddress!: string;
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  pickupPlaceId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  destinationPlaceId?: string;
+
   @Type(() => Number)
   @IsInt()
   @Min(0)

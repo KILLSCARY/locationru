@@ -152,4 +152,48 @@ export const environmentValidationSchema = Joi.object({
     .integer()
     .min(100)
     .default(1_000),
+  MAPS_PROVIDER: Joi.string()
+    .valid('development', 'yandex')
+    .default('development')
+    // The offline development provider must never run in production.
+    .when('NODE_ENV', { is: 'production', then: Joi.valid('yandex') }),
+  MAPS_API_KEY: Joi.string()
+    .allow('')
+    .when('MAPS_PROVIDER', {
+      is: 'yandex',
+      // Outside production a missing key falls back to the development provider,
+      // so it is only strictly required in production.
+      then: Joi.when('NODE_ENV', {
+        is: 'production',
+        then: Joi.string().min(1).required(),
+      }),
+    }),
+  MAPS_API_URL: Joi.string()
+    .uri({ scheme: ['http', 'https'] })
+    .default('https://geocode-maps.yandex.ru'),
+  MAPS_TIMEOUT_MS: Joi.number().integer().min(500).max(30_000).default(5_000),
+  MAPS_MAX_RETRIES: Joi.number().integer().min(0).max(5).default(2),
+  MAPS_USER_AGENT: Joi.string().min(1).default('ResilientTaxi/1.0'),
+  MAPS_SUGGESTIONS_TTL_SECONDS: Joi.number().integer().min(1).default(300),
+  MAPS_GEOCODING_TTL_SECONDS: Joi.number().integer().min(1).default(86_400),
+  MAPS_ROUTE_TTL_SECONDS: Joi.number().integer().min(1).default(1_800),
+  MAPS_SUGGESTIONS_RATE_LIMIT_PER_MINUTE: Joi.number()
+    .integer()
+    .min(1)
+    .default(60),
+  MAPS_ROUTES_RATE_LIMIT_PER_MINUTE: Joi.number().integer().min(1).default(30),
+  PRICING_BASE_FARE_KOPECKS: Joi.number().integer().min(0).default(15_000),
+  PRICING_PER_KILOMETER_KOPECKS: Joi.number().integer().min(0).default(3_000),
+  PRICING_PER_MINUTE_KOPECKS: Joi.number().integer().min(0).default(800),
+  PRICING_MINIMUM_FARE_KOPECKS: Joi.number().integer().min(0).default(15_000),
+  PRICING_LOWER_MULTIPLIER_BASIS_POINTS: Joi.number()
+    .integer()
+    .min(0)
+    .max(10_000)
+    .default(9_000),
+  PRICING_UPPER_MULTIPLIER_BASIS_POINTS: Joi.number()
+    .integer()
+    .min(10_000)
+    .max(50_000)
+    .default(13_000),
 });
