@@ -4,16 +4,19 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -31,9 +34,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -130,60 +134,174 @@ private fun WorkspaceScreen(
     onSignOut: () -> Unit,
 ) {
     var vehicleId by remember { mutableStateOf("") }
-    LazyColumn(
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-    ) {
-        item {
-            DriverMap(
-                latitude = 55.751244,
-                longitude = 37.618423,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .height(220.dp)
-                        .clip(RoundedCornerShape(22.dp)),
-            )
-        }
-        item {
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Полноэкранная карта — фон, как в макете.
+        DriverMap(
+            latitude = 55.751244,
+            longitude = 37.618423,
+            modifier = Modifier.fillMaxSize(),
+        )
+
+        // Плавающая панель управления сверху: статус + кнопки.
+        Column(
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier =
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .padding(16.dp),
+        ) {
+            StatusPill(online = state.online, offline = state.isOffline)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                Button(onClick = onToggleOnline, enabled = !state.isLoading) {
-                    Text(if (state.online) "Перейти OFFLINE" else "Перейти ONLINE")
+                Button(
+                    onClick = onToggleOnline,
+                    enabled = !state.isLoading,
+                    shape = CircleShape,
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = if (state.online) Accent else InkCard,
+                            contentColor = Color.White,
+                        ),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text(if (state.online) "ONLINE — нажмите, чтобы выйти" else "Выйти на линию")
                 }
-                Button(onClick = onRefresh, enabled = !state.isLoading) { Text("Обновить") }
-                Button(onClick = onSignOut) { Text("Выйти") }
+                CircleIconButton(label = "↻", onClick = onRefresh, enabled = !state.isLoading)
+                CircleIconButton(label = "⏻", onClick = onSignOut, enabled = true)
+            }
+            state.error?.let {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = InkCard, contentColor = Color.White),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(it, color = Color(0xFFFF6B6B), modifier = Modifier.padding(14.dp))
+                }
             }
         }
-        item {
-            Text(
-                text = if (state.online) "Статус: ONLINE" else "Статус: OFFLINE",
-                style = MaterialTheme.typography.headlineSmall,
-            )
-            if (state.isOffline) Text("Нет соединения: новые данные появятся после восстановления сети.")
-            state.error?.let { ErrorText(it) }
-        }
-        if (state.online && state.activeBid == null) {
-            item {
+
+        // Плавающие карточки снизу: заказы / активная ставка / пустое состояние.
+        Column(
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier =
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .heightIn(max = 460.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+        ) {
+            if (state.online && state.activeBid == null) {
                 OutlinedTextField(
                     value = vehicleId,
                     onValueChange = { vehicleId = it },
                     label = { Text("UUID подтверждённого автомобиля") },
+                    shape = RoundedCornerShape(18.dp),
+                    colors = inkFieldColors(),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-        }
-        state.activeBid?.let { bid ->
-            item { ActiveBidCard(bid.id, bid.offeredPriceKopecks, bid.expiresAt, onWithdraw) }
-        }
-        if (state.isLoading) item { LoadingScreen("Обновляем данные…") }
-        if (state.online && !state.isLoading && state.orders.isEmpty() && state.activeBid == null) {
-            item { Text("Доступных заказов пока нет.") }
-        }
-        items(state.orders, key = { it.tripId }) { trip ->
-            TripCard(trip, vehicleId, onBid, onSkip)
+            state.activeBid?.let { bid ->
+                ActiveBidCard(bid.id, bid.offeredPriceKopecks, bid.expiresAt, onWithdraw)
+            }
+            if (state.isLoading) {
+                Card(
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(containerColor = InkCard, contentColor = Color.White),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(16.dp),
+                    ) {
+                        CircularProgressIndicator(color = Accent, modifier = Modifier.size(20.dp))
+                        Text("Обновляем данные…")
+                    }
+                }
+            }
+            if (state.online && !state.isLoading && state.orders.isEmpty() && state.activeBid == null) {
+                EmptyStateCard()
+            }
+            state.orders.forEach { trip ->
+                TripCard(trip, vehicleId, onBid, onSkip)
+            }
         }
     }
 }
+
+@Composable
+private fun StatusPill(
+    online: Boolean,
+    offline: Boolean,
+) {
+    Card(
+        shape = CircleShape,
+        colors = CardDefaults.cardColors(containerColor = InkCard, contentColor = Color.White),
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+        ) {
+            Surface(color = if (online) Color(0xFF34C759) else InkMuted, shape = CircleShape) {
+                Box(modifier = Modifier.size(10.dp))
+            }
+            Text(
+                text = if (online) "Вы на линии" else "Не на линии",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            if (offline) Text("· нет сети", color = InkMuted, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun CircleIconButton(
+    label: String,
+    onClick: () -> Unit,
+    enabled: Boolean,
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        shape = CircleShape,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = InkCard, contentColor = Color.White),
+        modifier = Modifier.size(52.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.titleLarge)
+    }
+}
+
+@Composable
+private fun EmptyStateCard() {
+    Card(
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = InkCard, contentColor = Color.White),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(18.dp)) {
+            Text("Ищем заказы поблизости…", style = MaterialTheme.typography.titleMedium)
+            Text("Доступных заказов пока нет. Оставайтесь на линии.", color = InkMuted)
+        }
+    }
+}
+
+@Composable
+private fun inkFieldColors() =
+    OutlinedTextFieldDefaults.colors(
+        focusedContainerColor = InkCard,
+        unfocusedContainerColor = InkCard,
+        focusedTextColor = Color.White,
+        unfocusedTextColor = Color.White,
+        focusedBorderColor = Accent,
+        unfocusedBorderColor = InkLine,
+        focusedLabelColor = Accent,
+        unfocusedLabelColor = InkMuted,
+        cursorColor = Accent,
+    )
 
 @Composable
 private fun TripCard(
