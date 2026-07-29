@@ -31,6 +31,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import dagger.hilt.android.AndroidEntryPoint
+import ru.location.resilienttaxi.driver.core.designsystem.ResilientTaxiTheme
 import ru.location.resilienttaxi.driver.core.network.AvailableTripResponse
 import ru.location.resilienttaxi.driver.domain.CommissionCalculator
 import ru.location.resilienttaxi.driver.domain.OtpCode
@@ -42,7 +43,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
+            ResilientTaxiTheme {
                 Surface { DriverApp() }
             }
         }
