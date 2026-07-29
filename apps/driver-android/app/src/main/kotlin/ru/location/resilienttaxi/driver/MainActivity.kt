@@ -11,13 +11,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,6 +31,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -37,6 +42,11 @@ import ru.location.resilienttaxi.driver.domain.CommissionCalculator
 import ru.location.resilienttaxi.driver.domain.OtpCode
 
 private const val ESTIMATED_COMMISSION_BASIS_POINTS = 1_500
+
+private val InkCard = Color(0xFF0A0A0B)
+private val InkMuted = Color(0xFF9B9EA6)
+private val InkLine = Color(0xFF26282E)
+private val Accent = Color(0xFF12B0FF)
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -175,28 +185,59 @@ private fun TripCard(
             totalKopecks = trip.passengerPriceKopecks,
             commissionBasisPoints = ESTIMATED_COMMISSION_BASIS_POINTS,
         )
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors =
+            CardDefaults.cardColors(
+                containerColor = InkCard,
+                contentColor = Color.White,
+            ),
+    ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(16.dp)) {
             Text(
                 "Маршрут: ${trip.pickupAddress} → координаты назначения будут доступны после выбора",
                 style = MaterialTheme.typography.titleMedium,
             )
-            Text("Цена пассажира: ${trip.passengerPriceKopecks} коп.")
-            Text("Оценочная комиссия (15%): ${fare.commissionKopecks} коп.; чистый доход: ${fare.driverPayoutKopecks} коп.")
-            Text("До пассажира: ${trip.distanceToPickupMeters} м, ~${trip.estimatedPickupSeconds} сек")
-            Divider()
+            Text("Цена пассажира: ${trip.passengerPriceKopecks} коп.", color = InkMuted)
+            Text(
+                "Оценочная комиссия (15%): ${fare.commissionKopecks} коп.; чистый доход: ${fare.driverPayoutKopecks} коп.",
+                color = InkMuted,
+            )
+            Text("До пассажира: ${trip.distanceToPickupMeters} м, ~${trip.estimatedPickupSeconds} сек", color = InkMuted)
+            Divider(color = InkLine)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { onBid(trip, vehicleId, null) }) { Text("Принять цену") }
-                Button(onClick = { onSkip(trip.tripId) }) { Text("Пропустить") }
+                Button(
+                    onClick = { onBid(trip, vehicleId, null) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = InkCard),
+                ) { Text("Принять цену") }
+                Button(
+                    onClick = { onSkip(trip.tripId) },
+                    colors = ButtonDefaults.buttonColors(containerColor = InkLine, contentColor = Color.White),
+                ) { Text("Пропустить") }
             }
             OutlinedTextField(
                 value = ownPrice,
                 onValueChange = { ownPrice = it.filter(Char::isDigit) },
                 label = { Text("Своя цена в копейках") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                colors =
+                    OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Accent,
+                        unfocusedBorderColor = InkLine,
+                        focusedLabelColor = Accent,
+                        unfocusedLabelColor = InkMuted,
+                        cursorColor = Accent,
+                    ),
                 modifier = Modifier.fillMaxWidth(),
             )
-            Button(onClick = { onBid(trip, vehicleId, ownPrice.toIntOrNull()) }, modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = { onBid(trip, vehicleId, ownPrice.toIntOrNull()) },
+                colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = InkCard),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
                 Text("Предложить свою цену")
             }
         }
@@ -210,12 +251,23 @@ private fun ActiveBidCard(
     expiresAt: String,
     onWithdraw: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        colors =
+            CardDefaults.cardColors(
+                containerColor = InkCard,
+                contentColor = Color.White,
+            ),
+    ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(16.dp)) {
             Text("Активное предложение", style = MaterialTheme.typography.headlineSmall)
-            Text("Ставка: $priceKopecks коп.; действует до $expiresAt")
-            Text("ID предложения: $bidId")
-            Button(onClick = onWithdraw) { Text("Отозвать предложение") }
+            Text("Ставка: $priceKopecks коп.; действует до $expiresAt", color = InkMuted)
+            Text("ID предложения: $bidId", color = InkMuted)
+            Button(
+                onClick = onWithdraw,
+                colors = ButtonDefaults.buttonColors(containerColor = InkLine, contentColor = Color.White),
+            ) { Text("Отозвать предложение") }
         }
     }
 }
