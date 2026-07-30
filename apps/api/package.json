@@ -19,7 +19,8 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:seed:driver": "tsx prisma/seed-driver.ts",
-    "db:validate": "prisma validate"
+    "db:validate": "prisma validate",
+    "simulate:trip": "tsx scripts/simulate-trip.ts"
   },
   "dependencies": {
     "@nestjs/common": "11.1.28",

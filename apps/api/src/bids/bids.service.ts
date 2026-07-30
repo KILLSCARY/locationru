@@ -43,6 +43,8 @@ interface PickupMetrics {
 export interface AvailableDriverTrip extends PickupMetrics {
   passengerPriceKopecks: number;
   pickupAddress: string;
+  pickupLatitude: number;
+  pickupLongitude: number;
   destinationAddress: string;
   estimatedDistanceMeters: number;
   estimatedDurationSeconds: number;

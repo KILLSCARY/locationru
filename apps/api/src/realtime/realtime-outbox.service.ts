@@ -81,13 +81,17 @@ export class RealtimeOutboxService implements OnModuleDestroy, OnModuleInit {
     await this.enqueueRoomEvent(client, userRoom(userId), eventType, payload);
   }
 
-  async enqueueDriverLocationUpdate(input: {
-    accuracyMeters: number;
-    driverId: string;
-    latitude: number;
-    longitude: number;
-    recordedAt: string;
-  }): Promise<void> {
+  async enqueueDriverLocationUpdate(
+    input: {
+      accuracyMeters: number;
+      driverId: string;
+      latitude: number;
+      longitude: number;
+      recordedAt: string;
+    },
+    /** Trip the driver is currently assigned to, if any — see below. */
+    activeTripId?: string | null,
+  ): Promise<void> {
     const interval = this.configService.getOrThrow<number>(
       'realtime.locationEventIntervalSeconds',
     );
@@ -104,6 +108,17 @@ export class RealtimeOutboxService implements OnModuleDestroy, OnModuleInit {
       RealtimeEventType.DRIVER_LOCATION_UPDATED,
       input,
     );
+
+    // Also publish to the trip room so the assigned passenger can render the
+    // driver's marker; the passenger never joins the driver's own user room.
+    if (activeTripId) {
+      await this.enqueueTripEvent(
+        this.prisma,
+        activeTripId,
+        RealtimeEventType.DRIVER_LOCATION_UPDATED,
+        input,
+      );
+    }
   }
 
   async getLastSequence(room: string): Promise<number> {

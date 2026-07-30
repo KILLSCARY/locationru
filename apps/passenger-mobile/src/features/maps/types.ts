@@ -23,6 +23,25 @@ export type RouteEstimate = {
   provider: string;
 };
 
+export type GeoBounds = {
+  minLatitude: number;
+  minLongitude: number;
+  maxLatitude: number;
+  maxLongitude: number;
+};
+
+export type RouteResult = {
+  distanceMeters: number;
+  durationSeconds: number;
+  geometry: GeoPoint[];
+  encodedPolyline: string | null;
+  bounds: GeoBounds;
+  provider: string;
+  providerRouteId: string | null;
+  warnings: string[];
+  snappedWaypoints: GeoPoint[];
+};
+
 export type PricingEstimate = {
   recommendedPriceKopecks: number;
   minimumSuggestedPriceKopecks: number;

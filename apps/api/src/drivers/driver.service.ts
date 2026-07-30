@@ -16,6 +16,7 @@ import {
   DriverLocationConfidence,
   DriverStatus,
   DriverVerificationStatus,
+  TripStatus,
   VehicleStatus,
 } from '../generated/prisma/client.js';
 import { RedisService } from '../redis/redis.service.js';
@@ -186,6 +187,7 @@ export class DriverService {
     let previous = this.parseLatestPosition(
       await this.redis.get(this.latestPositionKey(user.id)),
     );
+    const activeTripId = await this.findActiveTripId(user.id);
     const ordered = [...inputs].sort(
       (left, right) => left.recordedAt.getTime() - right.recordedAt.getTime(),
     );
@@ -239,17 +241,45 @@ export class DriverService {
             'driverLocations.latestPositionTtlSeconds',
           ),
         );
-        await this.realtimeOutbox.enqueueDriverLocationUpdate({
-          driverId: user.id,
-          latitude: candidate.latitude,
-          longitude: candidate.longitude,
-          accuracyMeters: candidate.accuracyMeters,
-          recordedAt: candidate.recordedAt,
-        });
+        await this.realtimeOutbox.enqueueDriverLocationUpdate(
+          {
+            driverId: user.id,
+            latitude: candidate.latitude,
+            longitude: candidate.longitude,
+            accuracyMeters: candidate.accuracyMeters,
+            recordedAt: candidate.recordedAt,
+          },
+          activeTripId,
+        );
       }
     }
 
     return result;
+  }
+
+  /**
+   * The trip the driver is currently assigned to and en route on, if any — used
+   * to fan location updates out to the passenger's trip room. Statuses before
+   * DRIVER_SELECTED have no assigned driver yet, so they are excluded.
+   */
+  private async findActiveTripId(driverId: string): Promise<string | null> {
+    const trip = await this.prisma.trip.findFirst({
+      where: {
+        selectedDriverId: driverId,
+        status: {
+          in: [
+            TripStatus.DRIVER_SELECTED,
+            TripStatus.PAYMENT_PENDING,
+            TripStatus.PAYMENT_RESERVED,
+            TripStatus.DRIVER_EN_ROUTE,
+            TripStatus.DRIVER_ARRIVED,
+            TripStatus.IN_PROGRESS,
+          ],
+        },
+      },
+      select: { id: true },
+    });
+    return trip?.id ?? null;
   }
 
   private async getDriverProfile(

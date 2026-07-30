@@ -25,7 +25,7 @@ subprojects {
 tasks.register("unitTest") {
     group = "verification"
     description = "Runs unit tests for every Android build variant."
-    dependsOn(":app:testDevDebugUnitTest", ":app:testProdDebugUnitTest", ":domain:test")
+    dependsOn(":app:testDevDebugUnitTest", ":app:testProdDebugUnitTest", ":domain:test", ":core:maps:test")
 }
 
 tasks.register("quality") {

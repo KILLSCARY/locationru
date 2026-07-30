@@ -46,7 +46,7 @@ jobs:
         run: pnpm test
 
   android-domain:
-    name: Android domain module
+    name: Android pure-JVM modules
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -64,6 +64,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       # The Android modules need the Android SDK and are not built here; the
-      # pure-JVM domain module carries the unit-tested business logic.
-      - name: Domain tests and static analysis
-        run: ./gradlew :domain:test :domain:ktlintCheck :domain:detekt --no-daemon
+      # pure-JVM domain and core:maps modules carry the unit-tested business
+      # and map-rendering logic.
+      - name: Domain and maps tests and static analysis
+        run: ./gradlew :domain:test :domain:ktlintCheck :domain:detekt :core:maps:test :core:maps:ktlintCheck :core:maps:detekt --no-daemon

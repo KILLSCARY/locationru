@@ -48,6 +48,10 @@ class InMemoryPrisma {
     },
   };
 
+  readonly trip = {
+    findFirst: async () => null,
+  };
+
   async $queryRawUnsafe<T>(
     query: string,
     ...parameters: unknown[]
@@ -214,6 +218,38 @@ describe('DriverService', () => {
 
     expect(error.getStatus()).toBe(422);
     expect(error.getResponse()).toMatchObject({ code: 'LOCATION_IN_FUTURE' });
+  });
+
+  it('fans a location update out to the assigned trip room, not just the driver room', async () => {
+    prisma.trip.findFirst = async () => ({ id: 'trip-42' });
+    const calls: Array<[unknown, string | null | undefined]> = [];
+    service = new DriverService(
+      new ConfigService({
+        driverLocations: {
+          batchMaxSize: 3,
+          futureToleranceSeconds: 300,
+          latestPositionTtlSeconds: 300,
+          maxPlausibleSpeedMetersPerSecond: 70,
+          rateLimitPerMinute: 10,
+          staleAfterSeconds: 120,
+        },
+      }),
+      prisma as unknown as PrismaService,
+      redis as unknown as RedisService,
+      {
+        enqueueDriverLocationUpdate: async (
+          input: unknown,
+          activeTripId?: string | null,
+        ) => {
+          calls.push([input, activeTripId]);
+        },
+      } as unknown as RealtimeOutboxService,
+    );
+
+    await service.submitLocation(driver, location());
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[1]).toBe('trip-42');
   });
 
   it('rejects a position that implies an impossible speed', async () => {

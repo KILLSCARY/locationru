@@ -98,6 +98,8 @@ data class AvailableTripResponse(
     val tripId: String,
     val passengerPriceKopecks: Int,
     val pickupAddress: String,
+    val pickupLatitude: Double,
+    val pickupLongitude: Double,
     val destinationAddress: String,
     val estimatedDistanceMeters: Int,
     val estimatedDurationSeconds: Int,

@@ -10,7 +10,10 @@ plugins {
 // Gradle property (-PdriverDevApiBaseUrl=...), environment variable
 // (DRIVER_DEV_API_BASE_URL), then the placeholder default. Lets CI and local
 // builds target a real backend without editing this file.
-fun apiBaseUrl(flavor: String, default: String): String {
+fun apiBaseUrl(
+    flavor: String,
+    default: String,
+): String {
     val property = "driver${flavor.replaceFirstChar(Char::uppercase)}ApiBaseUrl"
     val environment = "DRIVER_${flavor.uppercase()}_API_BASE_URL"
     return (project.findProperty(property) as String?)?.takeIf { it.isNotBlank() }
@@ -72,11 +75,30 @@ kotlin {
     jvmToolchain(17)
 }
 
+// The offline development map view is forbidden in production. This is
+// attached to the prod assemble/bundle tasks' *execution* (not project
+// configuration), so it only fails a build that actually produces a prod
+// artifact — a plain `assembleDevDebug` never needs a key.
+afterEvaluate {
+    tasks
+        .matching { it.name.startsWith("assembleProd") || it.name.startsWith("bundleProd") }
+        .configureEach {
+            doFirst {
+                check(mapkitApiKey().isNotBlank()) {
+                    "MAPKIT_API_KEY (or -PmapkitApiKey=...) is required to build the prod flavor; " +
+                        "the development map view must not ship in production."
+                }
+            }
+        }
+}
+
 dependencies {
     implementation(project(":domain"))
     implementation(project(":core:network"))
     implementation(project(":core:database"))
     implementation(project(":core:location"))
+    implementation(project(":core:maps"))
+    implementation(project(":core:maps-yandex"))
     implementation(project(":core:designsystem"))
     implementation(project(":feature:auth"))
     implementation(project(":feature:home"))

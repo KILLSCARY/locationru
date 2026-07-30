@@ -44,8 +44,7 @@ object NetworkModule {
                     // rejects the incomplete body.
                     encodeDefaults = true
                 }.asConverterFactory("application/json".toMediaType()),
-            )
-            .build()
+            ).build()
 
     @Provides
     @Singleton

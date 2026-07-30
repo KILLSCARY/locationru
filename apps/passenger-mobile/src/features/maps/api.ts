@@ -1,5 +1,11 @@
 import { api } from '@/api/client';
-import type { AddressSuggestion, GeoPoint, RouteEstimate } from './types';
+import type {
+  AddressSuggestion,
+  GeoPoint,
+  ResolvedAddress,
+  RouteEstimate,
+  RouteResult,
+} from './types';
 
 export type AddressSuggestionsParams = {
   query: string;
@@ -37,3 +43,16 @@ export const estimateRoute = (input: RouteRequestInput) =>
     method: 'POST',
     body: JSON.stringify(input),
   });
+
+export const buildRoute = (input: RouteRequestInput) =>
+  api<{ route: RouteResult }>('/routes/build', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }).then((response) => response.route);
+
+export const reverseGeocode = (point: GeoPoint, signal?: AbortSignal) =>
+  api<{ address: ResolvedAddress }>('/maps/reverse-geocode', {
+    method: 'POST',
+    body: JSON.stringify(point),
+    signal,
+  }).then((response) => response.address);

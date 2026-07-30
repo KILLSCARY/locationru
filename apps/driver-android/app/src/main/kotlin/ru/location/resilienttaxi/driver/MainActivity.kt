@@ -29,6 +29,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +44,11 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import ru.location.resilienttaxi.driver.core.designsystem.ResilientTaxiTheme
+import ru.location.resilienttaxi.driver.core.maps.GeoPoint
+import ru.location.resilienttaxi.driver.core.maps.MapBoundsModel
+import ru.location.resilienttaxi.driver.core.maps.MapController
+import ru.location.resilienttaxi.driver.core.maps.MapMarkerKind
+import ru.location.resilienttaxi.driver.core.maps.MapMarkerModel
 import ru.location.resilienttaxi.driver.core.network.AvailableTripResponse
 import ru.location.resilienttaxi.driver.domain.CommissionCalculator
 import ru.location.resilienttaxi.driver.domain.OtpCode
@@ -134,12 +140,34 @@ private fun WorkspaceScreen(
     onSignOut: () -> Unit,
 ) {
     var vehicleId by remember { mutableStateOf("") }
+    var mapController by remember { mutableStateOf<MapController?>(null) }
+    val orderMarkers =
+        remember(state.orders) {
+            state.orders.map { trip ->
+                MapMarkerModel(
+                    id = trip.tripId,
+                    kind = MapMarkerKind.ORDER_CANDIDATE,
+                    location = GeoPoint(trip.pickupLatitude, trip.pickupLongitude),
+                    label = trip.pickupAddress,
+                )
+            }
+        }
+
+    LaunchedEffect(mapController, orderMarkers) {
+        if (orderMarkers.isNotEmpty()) {
+            mapController?.fitRouteBounds(
+                MapBoundsModel.of(orderMarkers.map { it.location }).padded(0.3),
+            )
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
-        // Полноэкранная карта — фон, как в макете.
+        // Полноэкранная карта — фон, как в макете; точки доступных заказов поверх неё.
         DriverMap(
-            latitude = 55.751244,
-            longitude = 37.618423,
+            markers = orderMarkers,
+            polylines = emptyList(),
             modifier = Modifier.fillMaxSize(),
+            onControllerReady = { mapController = it },
         )
 
         // Плавающая панель управления сверху: статус + кнопки.
@@ -267,7 +295,9 @@ private fun CircleIconButton(
         onClick = onClick,
         enabled = enabled,
         shape = CircleShape,
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+        contentPadding =
+            androidx.compose.foundation.layout
+                .PaddingValues(0.dp),
         colors = ButtonDefaults.buttonColors(containerColor = InkCard, contentColor = Color.White),
         modifier = Modifier.size(52.dp),
     ) {

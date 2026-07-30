@@ -19,13 +19,25 @@ export type TripStatus =
   | 'DISPUTED'
   | 'REFUNDED';
 
+export type TripPlace = {
+  address: string;
+  latitude: number;
+  longitude: number;
+};
+
+// Matches TripController.getById's PassengerTripDetails response.
 export type Trip = {
   id: string;
   status: TripStatus;
   version: number;
-  pickupAddress: string;
-  destinationAddress: string;
+  pickup: TripPlace;
+  destination: TripPlace;
   passengerPriceKopecks: number;
+  finalPriceKopecks: number | null;
+  selectedDriverId: string | null;
+  selectedVehicleId: string | null;
+  estimatedDistanceMeters: number;
+  estimatedDurationSeconds: number;
 };
 
 export type DriverBid = {
