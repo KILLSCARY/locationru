@@ -1,5 +1,8 @@
 import { Global, Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
+import { ERROR_REPORTER } from './error-reporter.interface.js';
+import { createErrorReporter } from './error-reporter.factory.js';
 import { RequestLoggingInterceptor } from './request-logging.interceptor.js';
 
 /**
@@ -8,7 +11,14 @@ import { RequestLoggingInterceptor } from './request-logging.interceptor.js';
  */
 @Global()
 @Module({
-  providers: [RequestLoggingInterceptor],
-  exports: [RequestLoggingInterceptor],
+  providers: [
+    RequestLoggingInterceptor,
+    {
+      provide: ERROR_REPORTER,
+      inject: [ConfigService],
+      useFactory: createErrorReporter,
+    },
+  ],
+  exports: [RequestLoggingInterceptor, ERROR_REPORTER],
 })
 export class ObservabilityModule {}

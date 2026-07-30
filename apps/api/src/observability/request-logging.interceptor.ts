@@ -1,6 +1,7 @@
 import {
   type CallHandler,
   type ExecutionContext,
+  Inject,
   Injectable,
   Logger,
   type NestInterceptor,
@@ -10,6 +11,8 @@ import type { Request, Response } from 'express';
 import { catchError, tap, throwError } from 'rxjs';
 
 import type { AuthenticatedUser } from '../auth/auth.types.js';
+import { ERROR_REPORTER } from './error-reporter.interface.js';
+import type { ErrorReporter } from './error-reporter.interface.js';
 import {
   currentRequestContext,
   updateRequestContext,
@@ -32,7 +35,10 @@ interface RequestWithUser extends Request {
 export class RequestLoggingInterceptor implements NestInterceptor {
   private readonly logger = new Logger('http');
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    @Inject(ERROR_REPORTER) private readonly errorReporter: ErrorReporter,
+  ) {}
 
   intercept(
     context: ExecutionContext,
@@ -44,6 +50,10 @@ export class RequestLoggingInterceptor implements NestInterceptor {
 
     if (request.user?.id) {
       updateRequestContext({ userId: request.user.id });
+      this.errorReporter.setUserContext({
+        id: request.user.id,
+        role: request.user.role,
+      });
     }
 
     return next.handle().pipe(
@@ -51,6 +61,12 @@ export class RequestLoggingInterceptor implements NestInterceptor {
       catchError((error: unknown) => {
         const statusCode = this.statusOf(error);
         this.log(request, statusCode, startedAt, error);
+        if (statusCode >= 500) {
+          this.errorReporter.captureException(error, {
+            route: request.route?.path ?? request.path,
+            method: request.method,
+          });
+        }
         return throwError(() => error);
       }),
     );

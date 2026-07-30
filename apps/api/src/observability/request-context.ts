@@ -47,3 +47,17 @@ export function updateRequestContext(
   if (!context) return;
   Object.assign(context, patch);
 }
+
+/**
+ * Removes userId/tripId from the in-flight request context (used by
+ * ErrorReporter.clearContext). Deletes the keys rather than assigning
+ * `undefined` — RequestContext's fields are optional-but-not-nullable
+ * under exactOptionalPropertyTypes, so `undefined` isn't a valid value to
+ * assign to them.
+ */
+export function clearRequestContextIdentity(): void {
+  const context = storage.getStore();
+  if (!context) return;
+  delete context.userId;
+  delete context.tripId;
+}
