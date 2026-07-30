@@ -27,7 +27,8 @@
     "staging:smoke": "bash scripts/staging/smoke.sh",
     "staging:backup": "bash scripts/staging/backup.sh",
     "staging:backup:list": "bash scripts/staging/backup-list.sh",
-    "staging:restore": "bash scripts/staging/restore.sh"
+    "staging:restore": "bash scripts/staging/restore.sh",
+    "staging:deploy": "bash scripts/staging/deploy.sh"
   },
   "devDependencies": {
     "@eslint/js": "9.39.1",
