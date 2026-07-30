@@ -1,0 +1,11 @@
+# Example unit for the staging host's daily Postgres backup. Copy to
+# /etc/systemd/system/, adjust WorkingDirectory to the repo checkout path,
+# then enable the accompanying .timer (see docs/staging/backups.md).
+[Unit]
+Description=Resilient Taxi staging Postgres backup
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/resilient-taxi
+ExecStart=/usr/bin/pnpm staging:backup

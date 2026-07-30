@@ -22,7 +22,10 @@
     "staging:up": "docker compose -f docker-compose.staging.yml --env-file .env.staging up -d --build --wait",
     "staging:down": "docker compose -f docker-compose.staging.yml --env-file .env.staging down",
     "staging:logs": "docker compose -f docker-compose.staging.yml --env-file .env.staging logs -f",
-    "staging:reset": "docker compose -f docker-compose.staging.yml --env-file .env.staging down -v && pnpm staging:up"
+    "staging:reset": "docker compose -f docker-compose.staging.yml --env-file .env.staging down -v && pnpm staging:up",
+    "staging:backup": "bash scripts/staging/backup.sh",
+    "staging:backup:list": "bash scripts/staging/backup-list.sh",
+    "staging:restore": "bash scripts/staging/restore.sh"
   },
   "devDependencies": {
     "@eslint/js": "9.39.1",

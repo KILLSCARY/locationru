@@ -1,0 +1,12 @@
+# Runs the staging backup once a day. `pnpm staging:backup` is itself
+# idempotent-safe to re-run (each run just adds a new timestamped dump),
+# so a missed/overlapping run is not harmful.
+[Unit]
+Description=Daily Resilient Taxi staging Postgres backup
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
