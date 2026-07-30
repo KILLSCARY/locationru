@@ -5,11 +5,11 @@ import {
   STAGING_SUPER_ADMIN_PHONE,
   STAGING_TEST_DRIVER_PHONE,
   STAGING_TEST_PASSENGER_PHONE,
+  STAGING_TEST_VEHICLE_REGISTRATION_NUMBER,
 } from '../src/staging-tools/staging-test-accounts.js';
 
 const STAGING_CITY_CODE = 'MOW';
 const STAGING_CITY_COMMISSION_BASIS_POINTS = 800;
-const STAGING_VEHICLE_REGISTRATION_NUMBER = 'A001AA777';
 
 /**
  * Idempotent staging fixture data: one SUPER_ADMIN, one passenger, one
@@ -96,14 +96,14 @@ async function seedStaging(): Promise<void> {
       },
     });
     await prisma.vehicle.upsert({
-      where: { registrationNumber: STAGING_VEHICLE_REGISTRATION_NUMBER },
+      where: { registrationNumber: STAGING_TEST_VEHICLE_REGISTRATION_NUMBER },
       update: { status: 'APPROVED' },
       create: {
         driverId: driver.id,
         brand: 'Lada',
         model: 'Vesta',
         color: 'white',
-        registrationNumber: STAGING_VEHICLE_REGISTRATION_NUMBER,
+        registrationNumber: STAGING_TEST_VEHICLE_REGISTRATION_NUMBER,
         productionYear: 2022,
         status: 'APPROVED',
       },

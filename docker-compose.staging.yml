@@ -117,6 +117,12 @@ services:
     networks: [data]
     restart: 'no'
 
+  # Also used as the one-off runner for `pnpm staging:seed` and
+  # `pnpm staging:smoke` (via `docker compose run --rm migrate <command>`)
+  # — both need the full monorepo + devDependencies (tsx, Prisma CLI) that
+  # the pruned runtime `api` image intentionally doesn't have, and the
+  # smoke test additionally needs to reach api/admin-web/minio directly,
+  # hence both networks here.
   migrate:
     build:
       context: .
@@ -127,7 +133,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    networks: [data]
+    networks: [data, edge]
     restart: 'no'
 
   api:

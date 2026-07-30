@@ -24,6 +24,7 @@
     "staging:logs": "docker compose -f docker-compose.staging.yml --env-file .env.staging logs -f",
     "staging:reset": "docker compose -f docker-compose.staging.yml --env-file .env.staging down -v && pnpm staging:up",
     "staging:seed": "bash scripts/staging/seed.sh",
+    "staging:smoke": "bash scripts/staging/smoke.sh",
     "staging:backup": "bash scripts/staging/backup.sh",
     "staging:backup:list": "bash scripts/staging/backup-list.sh",
     "staging:restore": "bash scripts/staging/restore.sh"
