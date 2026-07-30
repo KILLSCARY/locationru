@@ -37,7 +37,7 @@ interface OtpRecord {
 interface SessionUser {
   id: string;
   phone: string;
-  role: 'PASSENGER' | 'DRIVER' | 'ADMIN';
+  role: 'PASSENGER' | 'DRIVER' | 'ADMIN' | 'SUPER_ADMIN';
 }
 
 const scryptAsync = promisify(scrypt);

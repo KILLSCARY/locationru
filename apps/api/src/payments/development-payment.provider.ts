@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AppEnvironment } from '@resilient-taxi/config';
 
 import type {
   PaymentProvider,
@@ -21,8 +22,16 @@ export class DevelopmentPaymentProvider
   constructor(private readonly config: ConfigService) {}
 
   onModuleInit(): void {
-    if (this.config.getOrThrow<string>('app.environment') === 'production') {
-      throw new Error('DevelopmentPaymentProvider must not run in production');
+    const environment = this.config.getOrThrow<AppEnvironment>(
+      'app.appEnvironment',
+    );
+    if (
+      environment === AppEnvironment.STAGING ||
+      environment === AppEnvironment.PRODUCTION
+    ) {
+      throw new Error(
+        'DevelopmentPaymentProvider must not run in staging or production',
+      );
     }
   }
 

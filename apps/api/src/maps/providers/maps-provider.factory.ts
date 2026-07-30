@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AppEnvironment } from '@resilient-taxi/config';
 
 import { DevelopmentMapsProvider } from './development-maps.provider.js';
 import type { MapsProvider } from './maps-provider.interface.js';
@@ -9,15 +10,19 @@ import { YandexMapsProvider } from './yandex-maps.provider.js';
  * Selects the maps provider from configuration.
  *
  * - `development` is fully offline and MUST NOT run in production (enforced here
- *   and in env validation).
+ *   and in env validation). It is also refused in staging unless
+ *   MAPS_ALLOW_DEVELOPMENT_IN_STAGING=true — env validation is the actual
+ *   gate for that (it rejects MAPS_PROVIDER=development in staging without
+ *   the flag before the app even reaches this factory), so this function
+ *   only needs its own production check as defence in depth.
  * - `yandex` is the real adapter. If its API key is missing outside production,
  *   we fall back to the development provider so local runs work without a key.
  */
 export function createMapsProvider(config: ConfigService): MapsProvider {
   const logger = new Logger('MapsProviderFactory');
   const provider = config.getOrThrow<'development' | 'yandex'>('maps.provider');
-  const environment = config.getOrThrow<string>('app.environment');
-  const isProduction = environment === 'production';
+  const environment = config.getOrThrow<AppEnvironment>('app.appEnvironment');
+  const isProduction = environment === AppEnvironment.PRODUCTION;
 
   if (provider === 'development') {
     if (isProduction) {

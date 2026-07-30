@@ -63,6 +63,18 @@ export class RealtimeOutboxService implements OnModuleDestroy, OnModuleInit {
     this.publisher = publisher;
   }
 
+  /**
+   * Used by HealthService's readiness check. The poll timer is
+   * intentionally never started under NODE_ENV=test (see onModuleInit), so
+   * this only reports "not running" as a real problem outside test.
+   */
+  isRunning(): boolean {
+    if (this.configService.getOrThrow<string>('app.environment') === 'test') {
+      return true;
+    }
+    return this.pollTimer !== undefined;
+  }
+
   async enqueueTripEvent(
     client: OutboxClient,
     tripId: string,

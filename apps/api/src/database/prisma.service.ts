@@ -17,6 +17,20 @@ export class PrismaService extends PrismaClient implements OnModuleDestroy {
     await this.$queryRawUnsafe('SELECT 1');
   }
 
+  /**
+   * Reports whether every applied migration finished cleanly. Doesn't
+   * compare against the migrations/ directory on disk (that would require
+   * filesystem access from a built image) — a failed or stuck migration
+   * leaves `finished_at` null in Prisma's own tracking table, which is the
+   * signal an operator actually needs at readiness time.
+   */
+  async checkMigrationsApplied(): Promise<boolean> {
+    const rows = await this.$queryRawUnsafe<Array<{ count: bigint }>>(
+      'SELECT COUNT(*)::bigint AS count FROM "_prisma_migrations" WHERE "finished_at" IS NULL',
+    );
+    return (rows[0]?.count ?? 0n) === 0n;
+  }
+
   async onModuleDestroy(): Promise<void> {
     await this.$disconnect();
   }

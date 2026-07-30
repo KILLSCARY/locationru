@@ -1,13 +1,33 @@
+import { parseAppEnvironment, type AppEnvironment } from '@resilient-taxi/config';
+
+function parseOriginList(value: string | undefined): string[] {
+  return (value ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 export interface ApplicationConfig {
   app: {
+    /** Node/npm ecosystem concern only (dependency pruning, framework dev warnings). */
     environment: 'development' | 'production' | 'test';
+    /** The single axis application code branches on for security-relevant behavior. */
+    appEnvironment: AppEnvironment;
+    host: string;
     port: number;
+    publicUrl: string;
+    adminPublicUrl: string;
+    bodyLimitBytes: number;
+    enableSwagger: boolean;
   };
   database: {
     url: string;
   };
   redis: {
     url: string;
+  };
+  cors: {
+    allowedOrigins: string[];
   };
   auth: {
     accessTokenTtlSeconds: number;
@@ -18,9 +38,10 @@ export interface ApplicationConfig {
     otpRequestWindowSeconds: number;
     otpTtlSeconds: number;
     refreshTokenTtlSeconds: number;
+    enableDevelopmentOtp: boolean;
   };
   sms: {
-    provider: 'development' | 'http';
+    provider: 'development' | 'staging' | 'http';
     apiBaseUrl: string;
     apiKey: string;
     sender: string;
@@ -60,18 +81,34 @@ export interface ApplicationConfig {
     minimumCommissionKopecks: number;
   };
   payments: {
-    provider: 'development' | 'http';
+    provider: 'development' | 'staging' | 'http';
     apiBaseUrl: string;
     apiKey: string;
     webhookSecret: string;
     requestTimeoutMs: number;
+    enableDevelopmentPayments: boolean;
+    stagingDefaultScenario:
+      | 'SUCCESS'
+      | 'DECLINED'
+      | 'TIMEOUT'
+      | 'DUPLICATE_WEBHOOK'
+      | 'REFUND'
+      | 'PAYOUT_FAILED';
   };
   realtime: {
     locationEventIntervalSeconds: number;
     outboxPollIntervalMs: number;
   };
+  websocket: {
+    allowedOrigins: string[];
+    maxConnectionsPerUser: number;
+    heartbeatIntervalMs: number;
+    heartbeatTimeoutMs: number;
+    eventRateLimitPerMinute: number;
+  };
   maps: {
     provider: 'development' | 'yandex';
+    allowDevelopmentInStaging: boolean;
     apiKey: string;
     apiBaseUrl: string;
     timeoutMs: number;
@@ -91,19 +128,50 @@ export interface ApplicationConfig {
     lowerMultiplierBasisPoints: number;
     upperMultiplierBasisPoints: number;
   };
+  objectStorage: {
+    endpoint: string;
+    region: string;
+    bucket: string;
+    accessKey: string;
+    secretKey: string;
+    forcePathStyle: boolean;
+    maxUploadBytes: number;
+    allowedMimeTypes: string[];
+    uploadUrlTtlSeconds: number;
+    downloadUrlTtlSeconds: number;
+  };
+  observability: {
+    logLevel: 'debug' | 'info' | 'warn' | 'error';
+    errorReporter: 'noop' | 'staging';
+    errorReporterDsn: string;
+  };
+  seed: {
+    adminPhone: string;
+  };
 }
 
 export default (): ApplicationConfig => ({
   app: {
     environment: (process.env.NODE_ENV ??
       'development') as ApplicationConfig['app']['environment'],
+    appEnvironment: parseAppEnvironment(
+      process.env.APP_ENV ?? process.env.NODE_ENV ?? 'development',
+    ),
+    host: process.env.API_HOST ?? '0.0.0.0',
     port: Number(process.env.API_PORT ?? 3000),
+    publicUrl: process.env.API_PUBLIC_URL ?? '',
+    adminPublicUrl: process.env.ADMIN_PUBLIC_URL ?? '',
+    bodyLimitBytes: Number(process.env.HTTP_BODY_LIMIT_BYTES ?? 262_144),
+    enableSwagger: process.env.ENABLE_SWAGGER === 'true',
   },
   database: {
     url: process.env.DATABASE_URL ?? '',
   },
   redis: {
     url: process.env.REDIS_URL ?? '',
+  },
+  cors: {
+    allowedOrigins: parseOriginList(process.env.CORS_ALLOWED_ORIGINS),
   },
   auth: {
     accessTokenTtlSeconds: Number(
@@ -120,6 +188,7 @@ export default (): ApplicationConfig => ({
     refreshTokenTtlSeconds: Number(
       process.env.AUTH_REFRESH_TOKEN_TTL_SECONDS ?? 2_592_000,
     ),
+    enableDevelopmentOtp: process.env.ENABLE_DEVELOPMENT_OTP === 'true',
   },
   sms: {
     provider: (process.env.SMS_PROVIDER ??
@@ -198,6 +267,10 @@ export default (): ApplicationConfig => ({
     apiKey: process.env.PAYMENTS_API_KEY ?? '',
     webhookSecret: process.env.PAYMENTS_WEBHOOK_SECRET ?? '',
     requestTimeoutMs: Number(process.env.PAYMENTS_REQUEST_TIMEOUT_MS ?? 10_000),
+    enableDevelopmentPayments:
+      process.env.ENABLE_DEVELOPMENT_PAYMENTS === 'true',
+    stagingDefaultScenario: (process.env.STAGING_PAYMENT_DEFAULT_SCENARIO ??
+      'SUCCESS') as ApplicationConfig['payments']['stagingDefaultScenario'],
   },
   realtime: {
     locationEventIntervalSeconds: Number(
@@ -207,9 +280,28 @@ export default (): ApplicationConfig => ({
       process.env.REALTIME_OUTBOX_POLL_INTERVAL_MS ?? 1_000,
     ),
   },
+  websocket: {
+    allowedOrigins: parseOriginList(
+      process.env.WEBSOCKET_ALLOWED_ORIGINS || process.env.CORS_ALLOWED_ORIGINS,
+    ),
+    maxConnectionsPerUser: Number(
+      process.env.WEBSOCKET_MAX_CONNECTIONS_PER_USER ?? 10,
+    ),
+    heartbeatIntervalMs: Number(
+      process.env.WEBSOCKET_HEARTBEAT_INTERVAL_MS ?? 25_000,
+    ),
+    heartbeatTimeoutMs: Number(
+      process.env.WEBSOCKET_HEARTBEAT_TIMEOUT_MS ?? 20_000,
+    ),
+    eventRateLimitPerMinute: Number(
+      process.env.WEBSOCKET_EVENT_RATE_LIMIT_PER_MINUTE ?? 300,
+    ),
+  },
   maps: {
     provider: (process.env.MAPS_PROVIDER ??
       'development') as ApplicationConfig['maps']['provider'],
+    allowDevelopmentInStaging:
+      process.env.MAPS_ALLOW_DEVELOPMENT_IN_STAGING === 'true',
     apiKey: process.env.MAPS_API_KEY ?? '',
     apiBaseUrl: process.env.MAPS_API_URL ?? 'https://geocode-maps.yandex.ru',
     timeoutMs: Number(process.env.MAPS_TIMEOUT_MS ?? 5_000),
@@ -244,5 +336,39 @@ export default (): ApplicationConfig => ({
     upperMultiplierBasisPoints: Number(
       process.env.PRICING_UPPER_MULTIPLIER_BASIS_POINTS ?? 13_000,
     ),
+  },
+  objectStorage: {
+    endpoint: process.env.OBJECT_STORAGE_ENDPOINT ?? '',
+    region: process.env.OBJECT_STORAGE_REGION ?? 'us-east-1',
+    bucket: process.env.OBJECT_STORAGE_BUCKET ?? '',
+    accessKey: process.env.OBJECT_STORAGE_ACCESS_KEY ?? '',
+    secretKey: process.env.OBJECT_STORAGE_SECRET_KEY ?? '',
+    forcePathStyle: process.env.OBJECT_STORAGE_FORCE_PATH_STYLE !== 'false',
+    maxUploadBytes: Number(
+      process.env.OBJECT_STORAGE_MAX_UPLOAD_BYTES ?? 10 * 1024 * 1024,
+    ),
+    allowedMimeTypes: (
+      process.env.OBJECT_STORAGE_ALLOWED_MIME_TYPES ??
+      'image/jpeg,image/png,application/pdf'
+    )
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+    uploadUrlTtlSeconds: Number(
+      process.env.OBJECT_STORAGE_UPLOAD_URL_TTL_SECONDS ?? 300,
+    ),
+    downloadUrlTtlSeconds: Number(
+      process.env.OBJECT_STORAGE_DOWNLOAD_URL_TTL_SECONDS ?? 300,
+    ),
+  },
+  observability: {
+    logLevel: (process.env.LOG_LEVEL ??
+      'info') as ApplicationConfig['observability']['logLevel'],
+    errorReporter: (process.env.ERROR_REPORTER ??
+      'noop') as ApplicationConfig['observability']['errorReporter'],
+    errorReporterDsn: process.env.ERROR_REPORTER_DSN ?? '',
+  },
+  seed: {
+    adminPhone: process.env.SEED_ADMIN_PHONE ?? '',
   },
 });

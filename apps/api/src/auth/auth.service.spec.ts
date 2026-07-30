@@ -385,11 +385,11 @@ describe('AuthService', () => {
 describe('DevelopmentSmsProvider', () => {
   it('refuses to initialize in production', () => {
     const configService = new ConfigService({
-      app: { environment: 'production' },
+      app: { environment: 'production', appEnvironment: 'production' },
     });
 
     expect(() => new DevelopmentSmsProvider(configService)).toThrow(
-      'DevelopmentSmsProvider must not be used in production',
+      'DevelopmentSmsProvider must not be used in staging or production',
     );
   });
 });

@@ -12,6 +12,7 @@ enum UserRole {
   PASSENGER
   DRIVER
   ADMIN
+  SUPER_ADMIN
 }
 
 enum UserStatus {
@@ -159,6 +160,7 @@ model User {
   selectedTrips    Trip[]           @relation("TripSelectedDriver")
   tripIdempotencyKeys TripIdempotencyKey[]
   adminAuditLogs      AdminAuditLog[] @relation("AdminAuditActor")
+  storedDocuments     StoredDocument[]
 
   @@index([role, status], map: "users_role_status_idx")
   @@index([createdAt], map: "users_created_at_idx")
@@ -580,4 +582,32 @@ model TripIdempotencyKey {
 
   @@unique([passengerId, key], map: "trip_idempotency_keys_passenger_key_key")
   @@map("trip_idempotency_keys")
+}
+
+enum StoredDocumentStatus {
+  PENDING_UPLOAD
+  UPLOADED
+  DELETED
+}
+
+/**
+ * Metadata for a file in object storage (ObjectStorageProvider). The object
+ * itself never passes through the API — clients upload/download directly
+ * against a presigned URL scoped to `objectKey`, which is a random key, never
+ * the client-supplied original filename.
+ */
+model StoredDocument {
+  id               String               @id @default(uuid()) @db.Uuid
+  ownerId          String               @db.Uuid
+  objectKey        String               @unique(map: "stored_documents_object_key_key") @db.VarChar(512)
+  mimeType         String               @db.VarChar(128)
+  sizeBytes        Int?
+  status           StoredDocumentStatus @default(PENDING_UPLOAD)
+  originalFilename String?              @db.VarChar(255)
+  createdAt        DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime             @updatedAt @db.Timestamptz(3)
+  owner            User                 @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId, createdAt], map: "stored_documents_owner_created_at_idx")
+  @@map("stored_documents")
 }

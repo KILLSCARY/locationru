@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 
+import { RedisService } from '../redis/redis.service.js';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { AccessTokenGuard } from './guards/access-token.guard.js';
@@ -20,10 +21,11 @@ import { SMS_PROVIDER } from './providers/sms-provider.interface.js';
     RolesGuard,
     {
       provide: SMS_PROVIDER,
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => createSmsProvider(config),
+      inject: [ConfigService, RedisService],
+      useFactory: (config: ConfigService, redis: RedisService) =>
+        createSmsProvider(config, redis),
     },
   ],
-  exports: [JwtModule, AccessTokenGuard, RolesGuard],
+  exports: [JwtModule, AccessTokenGuard, RolesGuard, PhoneNormalizer],
 })
 export class AuthModule {}

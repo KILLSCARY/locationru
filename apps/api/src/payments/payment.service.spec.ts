@@ -71,7 +71,7 @@ class PaymentPrismaFake {
 
 describe('Payment architecture', () => {
   const provider = new DevelopmentPaymentProvider(
-    new ConfigService({ app: { environment: 'test' } }),
+    new ConfigService({ app: { environment: 'test', appEnvironment: 'test' } }),
   );
   const prisma = new PaymentPrismaFake();
   const service = new PaymentService(provider, prisma as never);
