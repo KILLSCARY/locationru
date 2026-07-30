@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react';
+import { USE_MOCKS } from '@/config/env';
 import type { MapAdapterProps, MapProviderName } from './MapAdapter';
 import { DevelopmentMapView } from './DevelopmentMapView';
 
@@ -22,6 +23,10 @@ export function getMapView(): ComponentType<
 > {
   const provider = resolveMapProviderName();
   const isProduction = process.env.NODE_ENV === 'production';
+
+  // Never honored in production — USE_MOCKS is a staging QA/demo
+  // convenience, not a way to bypass the production safety check below.
+  if (USE_MOCKS && !isProduction) return DevelopmentMapView;
 
   if (provider === 'development') {
     if (isProduction) {

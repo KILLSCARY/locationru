@@ -53,6 +53,20 @@ android {
             val url = apiBaseUrl("dev", "https://api-dev.example.invalid/api/v1/")
             buildConfigField("String", "API_BASE_URL", "\"$url\"")
         }
+        // Distinct applicationId (via the suffix below) from both dev and
+        // prod, so all three can be installed side by side on the same
+        // device without one overwriting another — the whole point being
+        // that a tester can never accidentally end up looking at the wrong
+        // environment's app. Its own app label + launcher icon (see
+        // src/staging/AndroidManifest.xml and src/staging/res/) make that
+        // visually obvious too, not just at the package-manager level.
+        create("staging") {
+            dimension = "environment"
+            applicationIdSuffix = ".staging"
+            versionNameSuffix = "-staging"
+            val url = apiBaseUrl("staging", "https://staging-api.example.invalid/api/v1/")
+            buildConfigField("String", "API_BASE_URL", "\"$url\"")
+        }
         create("prod") {
             dimension = "environment"
             val url = apiBaseUrl("prod", "https://api.example.invalid/api/v1/")

@@ -1,0 +1,12 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Merged into the main manifest for the staging flavor only —
+         distinct label + launcher icon so a staging install is never
+         visually mistaken for the production app on a device's home
+         screen. See app/build.gradle.kts for the applicationId suffix
+         that also keeps it a fully separate install. -->
+    <application
+        android:label="Resilient Taxi Staging"
+        android:icon="@mipmap/ic_launcher_staging"
+        tools:replace="android:label" />
+</manifest>

@@ -63,7 +63,8 @@ let socket: Socket | null = null;
 function getSocket(): Socket {
   if (socket) return socket;
 
-  const baseUrl = API_URL.replace(/\/api\/v1\/?$/, '');
+  const baseUrl =
+    process.env.EXPO_PUBLIC_WS_URL ?? API_URL.replace(/\/api\/v1\/?$/, '');
   socket = io(`${baseUrl}/realtime`, {
     // A function (not a static object) so socket.io re-reads the access token
     // fresh on every (re)connection attempt, picking up a token refreshed
