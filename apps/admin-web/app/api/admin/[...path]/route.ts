@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 
 const apiUrl = process.env.API_URL ?? 'http://localhost:3000/api/v1';
 
+const METHODS_WITH_BODY = new Set(['POST', 'PUT', 'PATCH']);
+
 async function proxy(
   request: Request,
   context: { params: Promise<{ path: string[] }> },
@@ -16,15 +18,14 @@ async function proxy(
   const { path } = await context.params;
   const target = new URL(`${apiUrl}/admin/${path.join('/')}`);
   target.search = new URL(request.url).search;
+  const hasBody = METHODS_WITH_BODY.has(request.method);
   const response = await fetch(target, {
     method: request.method,
     headers: {
       authorization: `Bearer ${token}`,
-      ...(request.method === 'POST'
-        ? { 'content-type': 'application/json' }
-        : {}),
+      ...(hasBody ? { 'content-type': 'application/json' } : {}),
     },
-    body: request.method === 'POST' ? await request.text() : undefined,
+    body: hasBody ? await request.text() : undefined,
     cache: 'no-store',
   });
   const text = await response.text();
@@ -39,3 +40,5 @@ async function proxy(
 
 export const GET = proxy;
 export const POST = proxy;
+export const PUT = proxy;
+export const DELETE = proxy;

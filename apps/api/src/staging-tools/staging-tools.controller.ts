@@ -94,4 +94,20 @@ export class StagingToolsController {
   ) {
     return this.stagingTools.resetTestData(admin.id, body?.confirm === true);
   }
+
+  @Post('driver-locations/:driverId/mark-stale')
+  markLocationStale(
+    @CurrentUser() admin: AuthenticatedUser,
+    @Param('driverId') driverId: string,
+  ) {
+    return this.stagingTools.markLatestLocationStale(admin.id, driverId);
+  }
+
+  @Post('driver-locations/:driverId/emulate-gps-jump')
+  emulateGpsJump(
+    @CurrentUser() admin: AuthenticatedUser,
+    @Param('driverId') driverId: string,
+  ) {
+    return this.stagingTools.emulateGpsJump(admin.id, driverId);
+  }
 }

@@ -210,6 +210,120 @@ export class StagingToolsService {
     return { deletedTrips: result.count };
   }
 
+  /**
+   * Marks a driver's most recent location `stale`, for testing how
+   * clients handle a driver whose position has gone quiet — without
+   * waiting for DRIVER_LOCATIONS_STALE_AFTER_SECONDS to elapse for real.
+   */
+  async markLatestLocationStale(
+    adminId: string,
+    driverId: string,
+  ): Promise<{ locationId: string }> {
+    const latest = await this.prisma.driverLocation.findFirst({
+      where: { driverId },
+      orderBy: { recordedAt: 'desc' },
+      select: { id: true },
+    });
+    if (!latest) {
+      throw new NotFoundException({
+        code: 'NO_LOCATION_FOUND',
+        message: 'This driver has no reported location yet',
+      });
+    }
+
+    await this.prisma.driverLocation.update({
+      where: { id: latest.id },
+      data: { stale: true },
+    });
+
+    await this.audit(
+      adminId,
+      'staging.location.marked_stale',
+      'DriverLocation',
+      latest.id,
+      {
+        driverId,
+      },
+    );
+
+    return { locationId: latest.id };
+  }
+
+  /**
+   * Inserts a location far from the driver's last reported position, to
+   * exercise how clients render/react to an implausible jump. Reported as
+   * confidence HIGH / not suspected spoofing — the same way a real,
+   * anomalous GPS reading would arrive — rather than pre-filtered, so the
+   * jump is actually visible to whatever is testing it.
+   */
+  async emulateGpsJump(
+    adminId: string,
+    driverId: string,
+    offsetDegrees = 0.5,
+  ): Promise<{ locationId: string }> {
+    const latest = await this.prisma.driverLocation.findFirst({
+      where: { driverId },
+      orderBy: { recordedAt: 'desc' },
+      select: {
+        id: true,
+        deviceId: true,
+      },
+    });
+    if (!latest) {
+      throw new NotFoundException({
+        code: 'NO_LOCATION_FOUND',
+        message: 'This driver has no reported location yet — submit one first',
+      });
+    }
+    const [previousPoint] = await this.prisma.$queryRawUnsafe<
+      Array<{ latitude: number; longitude: number }>
+    >(
+      `SELECT ST_Y("location"::geometry) AS latitude, ST_X("location"::geometry) AS longitude
+       FROM "driver_locations" WHERE "id" = $1`,
+      latest.id,
+    );
+    if (!previousPoint) {
+      throw new NotFoundException({
+        code: 'NO_LOCATION_FOUND',
+        message: 'This driver has no reported location yet — submit one first',
+      });
+    }
+
+    const id = randomUUID();
+    await this.prisma.$queryRawUnsafe(
+      `INSERT INTO "driver_locations" (
+          "id", "driverId", "deviceId", "recordedAt", "location", "accuracyMeters",
+          "provider", "confidence", "suspectedSpoofing", "stale"
+       ) VALUES (
+          $1, $2, $3, now(), ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography, $6,
+          $7, $8::"DriverLocationConfidence", $9, $10
+       )`,
+      id,
+      driverId,
+      latest.deviceId,
+      previousPoint.longitude + offsetDegrees,
+      previousPoint.latitude + offsetDegrees,
+      8,
+      'staging-tools',
+      'HIGH',
+      false,
+      false,
+    );
+
+    await this.audit(
+      adminId,
+      'staging.location.gps_jump_emulated',
+      'DriverLocation',
+      id,
+      {
+        driverId,
+        offsetDegrees,
+      },
+    );
+
+    return { locationId: id };
+  }
+
   private requireStagingPaymentProvider(): StagingPaymentProvider {
     if (this.paymentProvider.name !== 'staging') {
       throw new BadRequestException({
