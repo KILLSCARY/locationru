@@ -19,6 +19,7 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:seed:driver": "tsx prisma/seed-driver.ts",
+    "db:seed:staging": "tsx prisma/seed-staging.ts",
     "db:validate": "prisma validate",
     "simulate:trip": "tsx scripts/simulate-trip.ts"
   },
