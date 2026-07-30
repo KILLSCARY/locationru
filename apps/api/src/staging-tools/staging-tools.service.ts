@@ -48,10 +48,16 @@ export class StagingToolsService {
 
     // No natural UUID target for "a phone number" — this audit entry's
     // payload (masked phone) is the record of what was looked up.
-    await this.audit(adminId, 'staging.otp.viewed', 'StagingOtp', randomUUID(), {
-      phone: maskPhone(phone),
-      found: code !== null,
-    });
+    await this.audit(
+      adminId,
+      'staging.otp.viewed',
+      'StagingOtp',
+      randomUUID(),
+      {
+        phone: maskPhone(phone),
+        found: code !== null,
+      },
+    );
 
     return {
       phone,
@@ -197,13 +203,9 @@ export class StagingToolsService {
       where: { passengerId: passenger.id },
     });
 
-    await this.audit(
-      adminId,
-      'staging.test_data.reset',
-      'User',
-      passenger.id,
-      { deletedTrips: result.count },
-    );
+    await this.audit(adminId, 'staging.test_data.reset', 'User', passenger.id, {
+      deletedTrips: result.count,
+    });
 
     return { deletedTrips: result.count };
   }

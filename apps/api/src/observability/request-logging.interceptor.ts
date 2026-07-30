@@ -10,7 +10,10 @@ import type { Request, Response } from 'express';
 import { catchError, tap, throwError } from 'rxjs';
 
 import type { AuthenticatedUser } from '../auth/auth.types.js';
-import { currentRequestContext, updateRequestContext } from './request-context.js';
+import {
+  currentRequestContext,
+  updateRequestContext,
+} from './request-context.js';
 import { redactSensitiveData } from './sensitive-data.js';
 
 interface RequestWithUser extends Request {
@@ -31,7 +34,10 @@ export class RequestLoggingInterceptor implements NestInterceptor {
 
   constructor(private readonly configService: ConfigService) {}
 
-  intercept(context: ExecutionContext, next: CallHandler): ReturnType<CallHandler['handle']> {
+  intercept(
+    context: ExecutionContext,
+    next: CallHandler,
+  ): ReturnType<CallHandler['handle']> {
     const request = context.switchToHttp().getRequest<RequestWithUser>();
     const response = context.switchToHttp().getResponse<Response>();
     const startedAt = process.hrtime.bigint();
@@ -75,7 +81,9 @@ export class RequestLoggingInterceptor implements NestInterceptor {
       ...(errorCode ? { errorCode } : {}),
     }) as Record<string, unknown>;
 
-    this.logger.log(JSON.stringify({ timestamp: new Date().toISOString(), ...line }));
+    this.logger.log(
+      JSON.stringify({ timestamp: new Date().toISOString(), ...line }),
+    );
   }
 
   private statusOf(error: unknown): number {
@@ -87,7 +95,8 @@ export class RequestLoggingInterceptor implements NestInterceptor {
   }
 
   private errorCodeOf(error: unknown): string | undefined {
-    if (!error || typeof error !== 'object' || !('response' in error)) return undefined;
+    if (!error || typeof error !== 'object' || !('response' in error))
+      return undefined;
     const response = (error as { response: unknown }).response;
     if (response && typeof response === 'object' && 'code' in response) {
       return String((response as { code: unknown }).code);

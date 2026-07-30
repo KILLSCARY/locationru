@@ -12,9 +12,8 @@ export class StagingOnlyGuard implements CanActivate {
   constructor(private readonly config: ConfigService) {}
 
   canActivate(): boolean {
-    const environment = this.config.getOrThrow<AppEnvironment>(
-      'app.appEnvironment',
-    );
+    const environment =
+      this.config.getOrThrow<AppEnvironment>('app.appEnvironment');
     if (environment !== AppEnvironment.STAGING) {
       throw new NotFoundException();
     }

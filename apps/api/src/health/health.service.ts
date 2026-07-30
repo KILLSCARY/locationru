@@ -59,7 +59,10 @@ export class HealthService {
   async getReadiness(): Promise<ReadinessResponse> {
     const detailed = await this.getDetailedStatus();
     const checks = Object.fromEntries(
-      Object.entries(detailed.checks).map(([name, detail]) => [name, detail.status]),
+      Object.entries(detailed.checks).map(([name, detail]) => [
+        name,
+        detail.status,
+      ]),
     ) as ReadinessResponse['checks'];
 
     return { status: detailed.status, checks };
@@ -82,7 +85,8 @@ export class HealthService {
         this.timed(() => this.redis.checkConnection()),
         this.timed(async () => {
           const applied = await this.prisma.checkMigrationsApplied();
-          if (!applied) throw new Error('One or more migrations did not finish cleanly');
+          if (!applied)
+            throw new Error('One or more migrations did not finish cleanly');
         }),
         this.timed(async () => {
           if (!this.outbox.isRunning()) {
@@ -133,7 +137,9 @@ export class HealthService {
   private async checkConfig(): Promise<void> {
     const appEnvironment = this.configService.get<string>('app.appEnvironment');
     if (!appEnvironment) {
-      throw new Error('app.appEnvironment is missing from the loaded configuration');
+      throw new Error(
+        'app.appEnvironment is missing from the loaded configuration',
+      );
     }
   }
 

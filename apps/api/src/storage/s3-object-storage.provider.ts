@@ -40,9 +40,7 @@ export class S3ObjectStorageProvider implements ObjectStorageProvider {
       ),
       credentials: {
         accessKeyId: config.getOrThrow<string>('objectStorage.accessKey'),
-        secretAccessKey: config.getOrThrow<string>(
-          'objectStorage.secretKey',
-        ),
+        secretAccessKey: config.getOrThrow<string>('objectStorage.secretKey'),
       },
     });
   }

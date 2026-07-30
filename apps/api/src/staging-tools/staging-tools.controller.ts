@@ -48,7 +48,11 @@ export class StagingToolsController {
     @Param('tripId') tripId: string,
     @Body() body: SetPaymentScenarioDto,
   ) {
-    return this.stagingTools.setPaymentScenario(admin.id, tripId, body.scenario);
+    return this.stagingTools.setPaymentScenario(
+      admin.id,
+      tripId,
+      body.scenario,
+    );
   }
 
   @Delete('payments/:tripId/scenario')

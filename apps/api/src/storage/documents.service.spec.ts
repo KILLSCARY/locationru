@@ -40,8 +40,14 @@ function makeService(overrides: Partial<ObjectStorageProvider> = {}) {
   });
   const prisma = new FakePrisma();
   const storage: ObjectStorageProvider = {
-    createUploadUrl: async () => ({ url: 'https://upload.example', expiresInSeconds: 300 }),
-    createDownloadUrl: async () => ({ url: 'https://download.example', expiresInSeconds: 300 }),
+    createUploadUrl: async () => ({
+      url: 'https://upload.example',
+      expiresInSeconds: 300,
+    }),
+    createDownloadUrl: async () => ({
+      url: 'https://download.example',
+      expiresInSeconds: 300,
+    }),
     deleteObject: async () => undefined,
     objectExists: async () => true,
     getObjectMetadata: async () => ({

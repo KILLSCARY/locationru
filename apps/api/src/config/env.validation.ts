@@ -373,7 +373,9 @@ export const environmentValidationSchema = Joi.object({
   OBJECT_STORAGE_BUCKET: requiredWhenDeployed(Joi.string().min(1)),
   OBJECT_STORAGE_ACCESS_KEY: requiredWhenDeployed(Joi.string().min(1)),
   OBJECT_STORAGE_SECRET_KEY: requiredWhenDeployed(
-    Joi.string().min(1).invalid(...KNOWN_DEMO_SECRETS),
+    Joi.string()
+      .min(1)
+      .invalid(...KNOWN_DEMO_SECRETS),
   ),
   OBJECT_STORAGE_FORCE_PATH_STYLE: Joi.boolean().default(true),
   OBJECT_STORAGE_MAX_UPLOAD_BYTES: Joi.number()

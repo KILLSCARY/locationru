@@ -12,7 +12,8 @@ export const AppEnvironment = {
   PRODUCTION: 'production',
 } as const;
 
-export type AppEnvironment = (typeof AppEnvironment)[keyof typeof AppEnvironment];
+export type AppEnvironment =
+  (typeof AppEnvironment)[keyof typeof AppEnvironment];
 
 export const APP_ENVIRONMENT_VALUES: readonly AppEnvironment[] = Object.values(
   AppEnvironment,
@@ -48,7 +49,9 @@ export interface EnvironmentFlags {
   requiresHardenedConfig: boolean;
 }
 
-export function environmentFlags(environment: AppEnvironment): EnvironmentFlags {
+export function environmentFlags(
+  environment: AppEnvironment,
+): EnvironmentFlags {
   const isDevelopment = environment === AppEnvironment.DEVELOPMENT;
   const isTest = environment === AppEnvironment.TEST;
   const isStaging = environment === AppEnvironment.STAGING;

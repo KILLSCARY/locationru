@@ -73,9 +73,8 @@ export class StagingPaymentProvider implements PaymentProvider {
     private readonly config: ConfigService,
     private readonly redis: RedisService,
   ) {
-    const environment = this.config.getOrThrow<AppEnvironment>(
-      'app.appEnvironment',
-    );
+    const environment =
+      this.config.getOrThrow<AppEnvironment>('app.appEnvironment');
     if (environment === AppEnvironment.PRODUCTION) {
       throw new Error('StagingPaymentProvider must not be used in production');
     }
@@ -234,7 +233,9 @@ export class StagingPaymentProvider implements PaymentProvider {
     overrideKeySubject: string,
   ): Promise<StagingPaymentScenario> {
     if (!overrideKeySubject) return this.defaultScenario;
-    const stored = await this.redis.get(scenarioOverrideKey(overrideKeySubject));
+    const stored = await this.redis.get(
+      scenarioOverrideKey(overrideKeySubject),
+    );
     if (stored && (STAGING_SCENARIOS as readonly string[]).includes(stored)) {
       return stored as StagingPaymentScenario;
     }

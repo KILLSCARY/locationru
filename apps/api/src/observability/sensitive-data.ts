@@ -13,7 +13,13 @@
  * legitimate non-sensitive field name in this codebase, and this also
  * covers camelCase keys like `accessToken`/`refreshToken`.
  */
-const EXACT_SENSITIVE_KEYS = new Set(['otp', 'code', 'otpcode', 'boardingcode', 'pin']);
+const EXACT_SENSITIVE_KEYS = new Set([
+  'otp',
+  'code',
+  'otpcode',
+  'boardingcode',
+  'pin',
+]);
 
 const SENSITIVE_SUBSTRINGS = [
   'password',

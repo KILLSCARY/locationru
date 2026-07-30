@@ -28,9 +28,8 @@ export class StagingSmsProvider implements SmsProvider {
     private readonly config: ConfigService,
     private readonly redis: RedisService,
   ) {
-    const environment = this.config.getOrThrow<AppEnvironment>(
-      'app.appEnvironment',
-    );
+    const environment =
+      this.config.getOrThrow<AppEnvironment>('app.appEnvironment');
     if (environment === AppEnvironment.PRODUCTION) {
       throw new Error('StagingSmsProvider must not be used in production');
     }

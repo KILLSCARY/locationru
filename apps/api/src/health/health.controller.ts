@@ -4,7 +4,12 @@ import {
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { AccessTokenGuard } from '../auth/guards/access-token.guard.js';
@@ -29,7 +34,9 @@ export class HealthController {
   }
 
   @Get('live')
-  @ApiOperation({ summary: 'Liveness probe: the process is alive, no dependency checks' })
+  @ApiOperation({
+    summary: 'Liveness probe: the process is alive, no dependency checks',
+  })
   @ApiOkResponse({ description: 'The API process is running' })
   getLiveness(): HealthResponse {
     return this.healthService.getLiveness();
@@ -60,7 +67,8 @@ export class HealthController {
   @UseGuards(AccessTokenGuard, RolesGuard)
   @Roles('ADMIN', 'SUPER_ADMIN')
   @ApiOperation({
-    summary: 'Detailed per-dependency status (timings, error messages) for operators',
+    summary:
+      'Detailed per-dependency status (timings, error messages) for operators',
   })
   @ApiOkResponse({ description: 'Detailed dependency status' })
   getDetailedStatus(): Promise<DetailedStatusResponse> {

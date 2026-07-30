@@ -10,9 +10,8 @@ export class DevelopmentSmsProvider implements SmsProvider {
   private readonly logger = new Logger(DevelopmentSmsProvider.name);
 
   constructor(configService: ConfigService) {
-    this.environment = configService.getOrThrow<AppEnvironment>(
-      'app.appEnvironment',
-    );
+    this.environment =
+      configService.getOrThrow<AppEnvironment>('app.appEnvironment');
 
     if (
       this.environment === AppEnvironment.STAGING ||

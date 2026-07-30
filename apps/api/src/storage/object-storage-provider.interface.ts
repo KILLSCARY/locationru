@@ -17,10 +17,7 @@ export interface PresignedUrl {
  * from a client-supplied filename.
  */
 export interface ObjectStorageProvider {
-  createUploadUrl(
-    objectKey: string,
-    mimeType: string,
-  ): Promise<PresignedUrl>;
+  createUploadUrl(objectKey: string, mimeType: string): Promise<PresignedUrl>;
   createDownloadUrl(objectKey: string): Promise<PresignedUrl>;
   deleteObject(objectKey: string): Promise<void>;
   objectExists(objectKey: string): Promise<boolean>;

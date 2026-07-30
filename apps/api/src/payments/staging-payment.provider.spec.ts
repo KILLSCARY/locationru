@@ -38,7 +38,10 @@ describe('StagingPaymentProvider', () => {
   it('refuses to run in production', () => {
     const config = new ConfigService({
       app: { appEnvironment: 'production' },
-      payments: { stagingDefaultScenario: 'SUCCESS', webhookSecret: 'x'.repeat(20) },
+      payments: {
+        stagingDefaultScenario: 'SUCCESS',
+        webhookSecret: 'x'.repeat(20),
+      },
     });
     expect(() => new StagingPaymentProvider(config, {} as never)).toThrow(
       'must not be used in production',

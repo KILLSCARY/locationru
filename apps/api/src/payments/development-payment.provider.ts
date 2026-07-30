@@ -22,9 +22,8 @@ export class DevelopmentPaymentProvider
   constructor(private readonly config: ConfigService) {}
 
   onModuleInit(): void {
-    const environment = this.config.getOrThrow<AppEnvironment>(
-      'app.appEnvironment',
-    );
+    const environment =
+      this.config.getOrThrow<AppEnvironment>('app.appEnvironment');
     if (
       environment === AppEnvironment.STAGING ||
       environment === AppEnvironment.PRODUCTION

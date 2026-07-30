@@ -1,10 +1,14 @@
 import { jest } from '@jest/globals';
 import { ConfigService } from '@nestjs/config';
 
-import { StagingSmsProvider, stagingOtpLookupKey } from './staging-sms.provider.js';
+import {
+  StagingSmsProvider,
+  stagingOtpLookupKey,
+} from './staging-sms.provider.js';
 
 class FakeRedis {
-  public readonly writes: Array<{ key: string; value: string; ttl: number }> = [];
+  public readonly writes: Array<{ key: string; value: string; ttl: number }> =
+    [];
 
   async setWithTtl(key: string, value: string, ttl: number): Promise<void> {
     this.writes.push({ key, value, ttl });

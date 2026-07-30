@@ -2,10 +2,10 @@ import { redactSensitiveData } from './sensitive-data.js';
 
 describe('redactSensitiveData', () => {
   it('redacts an OTP code field', () => {
-    const result = redactSensitiveData({ code: '123456', tripId: 'trip-1' }) as Record<
-      string,
-      unknown
-    >;
+    const result = redactSensitiveData({
+      code: '123456',
+      tripId: 'trip-1',
+    }) as Record<string, unknown>;
     expect(result.code).toBe('[REDACTED]');
     expect(result.tripId).toBe('trip-1');
   });

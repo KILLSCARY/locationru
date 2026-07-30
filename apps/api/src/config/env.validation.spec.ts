@@ -126,7 +126,8 @@ describe('environmentValidationSchema — staging safety', () => {
         REDIS_URL: 'redis://:pass@localhost:6379',
         AUTH_JWT_SECRET: 'a-real-generated-secret-that-is-32-chars-plus',
         AUTH_OTP_HASH_SECRET: 'another-real-generated-secret-32-chars-plus',
-        TRIPS_BOARDING_CODE_HASH_SECRET: 'yet-another-real-secret-32-chars-plus',
+        TRIPS_BOARDING_CODE_HASH_SECRET:
+          'yet-another-real-secret-32-chars-plus',
         WEBSOCKET_ALLOWED_ORIGINS: '*',
       },
       { abortEarly: false, allowUnknown: true },

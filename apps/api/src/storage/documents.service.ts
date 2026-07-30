@@ -88,9 +88,7 @@ export class DocumentsService {
   /** Confirms the object actually landed in storage before flipping status. */
   async confirmUpload(userId: string, documentId: string) {
     const document = await this.requireOwnedDocument(userId, documentId);
-    const metadata = await this.storage.getObjectMetadata(
-      document.objectKey,
-    );
+    const metadata = await this.storage.getObjectMetadata(document.objectKey);
     if (!metadata) {
       throw new BadRequestException({
         code: 'UPLOAD_NOT_FOUND',

@@ -14,7 +14,8 @@ import { OBJECT_STORAGE_PROVIDER } from './object-storage-provider.interface.js'
     {
       provide: OBJECT_STORAGE_PROVIDER,
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => createObjectStorageProvider(config),
+      useFactory: (config: ConfigService) =>
+        createObjectStorageProvider(config),
     },
     DocumentsService,
   ],

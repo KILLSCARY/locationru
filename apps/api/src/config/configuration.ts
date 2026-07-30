@@ -1,4 +1,7 @@
-import { parseAppEnvironment, type AppEnvironment } from '@resilient-taxi/config';
+import {
+  parseAppEnvironment,
+  type AppEnvironment,
+} from '@resilient-taxi/config';
 
 function parseOriginList(value: string | undefined): string[] {
   return (value ?? '')
