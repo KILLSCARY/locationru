@@ -136,7 +136,15 @@ services:
     networks: [data, edge]
     restart: 'no'
 
+  # `image:` + `build:` together lets a local `docker compose up --build`
+  # keep working unchanged, while the CI staging-deploy workflow instead
+  # sets STAGING_API_IMAGE/STAGING_ADMIN_IMAGE to a commit-SHA-tagged image
+  # it already built and pushed once in a separate job, then runs
+  # `docker compose pull` + `up -d` (no --build) — one build, deployed
+  # verbatim, never a second host-side rebuild that could drift from what
+  # CI tested.
   api:
+    image: ${STAGING_API_IMAGE:-resilient-taxi-staging-api:local}
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -161,6 +169,7 @@ services:
           memory: 1g
 
   admin-web:
+    image: ${STAGING_ADMIN_IMAGE:-resilient-taxi-staging-admin-web:local}
     build:
       context: .
       dockerfile: apps/admin-web/Dockerfile
