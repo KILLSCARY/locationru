@@ -2,6 +2,9 @@ import { ConfigService } from '@nestjs/config';
 
 import { PrismaService } from '../database/prisma.service.js';
 import { TripStatus } from '../generated/prisma/client.js';
+import { NotificationOutboxService } from '../notifications/notification-outbox.service.js';
+import { NotificationService } from '../notifications/notification.service.js';
+import { NotificationTemplateService } from '../notifications/templates/notification-template.service.js';
 import { DispatchService, rankDispatchCandidates } from './dispatch.service.js';
 import { StraightLineRouteEstimator } from './routing/straight-line-route-estimator.js';
 
@@ -26,7 +29,10 @@ class InMemoryDispatchPrisma {
   readonly queryCalls: Array<{ parameters: unknown[]; query: string }> = [];
   readonly attempts: Array<Record<string, unknown>> = [];
   readonly logs: Array<Record<string, unknown>> = [];
+  readonly notificationOutboxRows = new Map<string, Record<string, unknown>>();
   tripStatus = TripStatus.SEARCHING;
+  passengerPriceKopecks = 35_000;
+  finalPriceKopecks: number | null = null;
 
   readonly dispatchAttempt = {
     create: async ({ data }: { data: Record<string, unknown> }) => {
@@ -42,6 +48,17 @@ class InMemoryDispatchPrisma {
     },
   };
 
+  readonly notificationOutboxEvent = {
+    findUnique: async ({ where }: { where: { deduplicationKey: string } }) =>
+      this.notificationOutboxRows.get(where.deduplicationKey) ?? null,
+    findFirst: async () => null,
+    updateMany: async () => ({ count: 0 }),
+    create: async ({ data }: { data: Record<string, unknown> }) => {
+      this.notificationOutboxRows.set(data.deduplicationKey as string, data);
+      return data;
+    },
+  };
+
   async $transaction<T>(
     callback: (transaction: this) => Promise<T>,
   ): Promise<T> {
@@ -54,7 +71,14 @@ class InMemoryDispatchPrisma {
   ): Promise<T> {
     this.queryCalls.push({ query, parameters });
     if (query.includes('FOR UPDATE')) {
-      return [{ id: 'trip-1', status: this.tripStatus }] as T;
+      return [
+        {
+          id: 'trip-1',
+          status: this.tripStatus,
+          passengerPriceKopecks: this.passengerPriceKopecks,
+          finalPriceKopecks: this.finalPriceKopecks,
+        },
+      ] as T;
     }
 
     const radius = parameters[2] as number;
@@ -124,10 +148,14 @@ describe('DispatchService', () => {
         ...coordinates,
       },
     ];
+    const config = dispatchConfig();
+    const { notifications, notificationOutbox } = notificationServices(config);
     const service = new DispatchService(
-      dispatchConfig(),
+      config,
       prisma as unknown as PrismaService,
       new StraightLineRouteEstimator(),
+      notifications,
+      notificationOutbox,
     );
 
     const result = await service.findCandidates({ tripId: 'trip-1' });
@@ -153,6 +181,20 @@ describe('DispatchService', () => {
       1_000,
       2_000,
     ]);
+
+    expect(prisma.notificationOutboxRows.size).toBe(2);
+    const rows = [...prisma.notificationOutboxRows.values()];
+    expect(rows.every((row) => row.type === 'DRIVER_NEW_TRIP_AVAILABLE')).toBe(
+      true,
+    );
+    expect(rows.map((row) => row.userId).sort()).toEqual(
+      ['driver-high-rating', 'driver-low-rating'].sort(),
+    );
+    expect(
+      rows.every((row) =>
+        (row.payload as { body: string }).body.includes('350 ₽'),
+      ),
+    ).toBe(true);
   });
 
   it('allows a prior candidate only when a redispatch reason is supplied', async () => {
@@ -166,10 +208,14 @@ describe('DispatchService', () => {
         ...coordinates,
       },
     ];
+    const config = dispatchConfig();
+    const { notifications, notificationOutbox } = notificationServices(config);
     const service = new DispatchService(
-      dispatchConfig(),
+      config,
       prisma as unknown as PrismaService,
       new StraightLineRouteEstimator(),
+      notifications,
+      notificationOutbox,
     );
 
     await service.findCandidates({
@@ -194,5 +240,26 @@ function dispatchConfig(): ConfigService {
       maxRadiusMeters: 5_000,
       radiusMultiplier: 2,
     },
+    push: {
+      maxAttempts: 5,
+      ttl: {
+        newOrderSeconds: 30,
+        activeTripSeconds: 300,
+        paymentSeconds: 86_400,
+      },
+    },
   });
+}
+
+function notificationServices(config: ConfigService) {
+  const notifications = new NotificationService(
+    config,
+    new NotificationTemplateService(),
+  );
+  const notificationOutbox = new NotificationOutboxService(
+    config,
+    undefined as unknown as PrismaService,
+    new NotificationTemplateService(),
+  );
+  return { notifications, notificationOutbox };
 }

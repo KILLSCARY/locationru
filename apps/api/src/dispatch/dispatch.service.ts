@@ -12,8 +12,12 @@ import { PrismaService } from '../database/prisma.service.js';
 import {
   type Prisma,
   DispatchAttemptLogStatus,
+  NotificationType,
   TripStatus,
 } from '../generated/prisma/client.js';
+import { NotificationOutboxService } from '../notifications/notification-outbox.service.js';
+import { NotificationService } from '../notifications/notification.service.js';
+import { formatPriceKopecks } from '../notifications/templates/notification-template.service.js';
 import {
   ROUTE_ESTIMATOR,
   type RouteEstimator,
@@ -23,6 +27,8 @@ import {
 interface DispatchTripRow {
   id: string;
   status: TripStatus;
+  passengerPriceKopecks: number;
+  finalPriceKopecks: number | null;
 }
 
 interface DispatchCandidateRow extends UnrankedDispatchCandidate {
@@ -73,6 +79,8 @@ export class DispatchService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     @Inject(ROUTE_ESTIMATOR) private readonly routeEstimator: RouteEstimator,
+    private readonly notifications: NotificationService,
+    private readonly notificationOutbox: NotificationOutboxService,
   ) {}
 
   async findCandidates(request: DispatchRequest): Promise<DispatchResult> {
@@ -127,6 +135,7 @@ export class DispatchService {
             status: DispatchAttemptLogStatus.CANDIDATE,
           })),
         });
+        await this.notifyCandidates(transaction, trip, attempt.id, candidates);
       }
 
       return {
@@ -142,7 +151,7 @@ export class DispatchService {
     tripId: string,
   ): Promise<DispatchTripRow> {
     const trips = await transaction.$queryRawUnsafe<DispatchTripRow[]>(
-      `SELECT "id", "status"
+      `SELECT "id", "status", "passengerPriceKopecks", "finalPriceKopecks"
        FROM "trips"
        WHERE "id" = $1
        FOR UPDATE`,
@@ -166,6 +175,38 @@ export class DispatchService {
     }
 
     return trip;
+  }
+
+  /**
+   * Pushed inside the same transaction as the dispatch attempt itself
+   * (unlike TripLifecycleService's best-effort enqueue), since this
+   * transaction is already owned end-to-end by DispatchService — a genuine
+   * transactional-outbox insert, not a following best-effort call. One
+   * push per candidate per attempt; a later attempt for the same trip
+   * (redispatch) naturally supersedes an earlier still-PENDING push to the
+   * same driver via NotificationService's SUPERSEDE collapse key.
+   */
+  private async notifyCandidates(
+    transaction: Prisma.TransactionClient,
+    trip: DispatchTripRow,
+    attemptId: string,
+    candidates: DispatchCandidate[],
+  ): Promise<void> {
+    const formattedPrice = formatPriceKopecks(
+      trip.finalPriceKopecks ?? trip.passengerPriceKopecks,
+    );
+    for (const candidate of candidates) {
+      const draft = this.notifications.createDraft({
+        userId: candidate.driverId,
+        type: NotificationType.DRIVER_NEW_TRIP_AVAILABLE,
+        application: 'DRIVER' as never,
+        entityType: 'TRIP',
+        entityId: trip.id,
+        idempotencyKey: `${attemptId}:${candidate.driverId}`,
+        templateParams: { tripId: trip.id, formattedPrice },
+      });
+      await this.notificationOutbox.enqueue(transaction, draft);
+    }
   }
 
   /**

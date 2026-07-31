@@ -953,6 +953,10 @@ model NotificationOutboxEvent {
   payload          Json
   priority         NotificationPriority
   deduplicationKey String                   @unique(map: "notification_outbox_events_dedup_key_key") @db.VarChar(255)
+  /**
+   * Groups events belonging to the same SUPERSEDE/COLLAPSE_COUNT family (see NotificationService.computeCollapseKey) — never unique, several rows can share one while at most one is still PENDING.
+   */
+  collapseKey      String                   @db.VarChar(255)
   status           NotificationOutboxStatus @default(PENDING)
   attempts         Int                      @default(0)
   maxAttempts      Int
@@ -965,6 +969,7 @@ model NotificationOutboxEvent {
 
   @@index([status, availableAt], map: "notification_outbox_events_status_available_at_idx")
   @@index([userId, type], map: "notification_outbox_events_user_type_idx")
+  @@index([collapseKey, status], map: "notification_outbox_events_collapse_key_status_idx")
   @@map("notification_outbox_events")
 }
 

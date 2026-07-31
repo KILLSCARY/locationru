@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { NotificationsModule } from '../notifications/notifications.module.js';
 import { DispatchService } from './dispatch.service.js';
 import { createRouteEstimator } from './routing/route-estimator.factory.js';
 import { ROUTE_ESTIMATOR } from './routing/route-estimator.interface.js';
 
 @Module({
+  imports: [NotificationsModule],
   providers: [
     DispatchService,
     {

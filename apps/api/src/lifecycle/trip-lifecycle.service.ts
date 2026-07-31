@@ -12,16 +12,50 @@ import { ConfigService } from '@nestjs/config';
 import type { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../database/prisma.service.js';
 import {
+  NotificationType,
   type Prisma,
   TripPaymentStatus,
   TripStatus,
   TripStatusActorType,
 } from '../generated/prisma/client.js';
+import { NotificationOutboxService } from '../notifications/notification-outbox.service.js';
+import { NotificationService } from '../notifications/notification.service.js';
 import {
   TripStateMachine,
   type TripTransitionResult,
 } from '../trips/trip-state-machine.service.js';
 import { TestPaymentProvider } from './test-payment.provider.js';
+
+/** Which push notification(s) a given lifecycle action's success sends, and to whom. Actions with no entry here have no user-facing push. */
+const NOTIFICATIONS_BY_ACTION: Partial<
+  Record<
+    LifecycleAction,
+    Array<{ recipient: 'PASSENGER' | 'DRIVER'; type: NotificationType }>
+  >
+> = {
+  AUTHORIZE_PAYMENT: [
+    {
+      recipient: 'PASSENGER',
+      type: NotificationType.PASSENGER_PAYMENT_RESERVED,
+    },
+    { recipient: 'DRIVER', type: NotificationType.DRIVER_PAYMENT_RESERVED },
+  ],
+  START_EN_ROUTE: [
+    {
+      recipient: 'PASSENGER',
+      type: NotificationType.PASSENGER_DRIVER_EN_ROUTE,
+    },
+  ],
+  ARRIVE: [
+    { recipient: 'PASSENGER', type: NotificationType.PASSENGER_DRIVER_ARRIVED },
+  ],
+  START_TRIP: [
+    { recipient: 'PASSENGER', type: NotificationType.PASSENGER_TRIP_STARTED },
+  ],
+  COMPLETE_TRIP: [
+    { recipient: 'PASSENGER', type: NotificationType.PASSENGER_TRIP_COMPLETED },
+  ],
+};
 
 type LifecycleAction =
   | 'CONFIRM_DEPARTURE'
@@ -38,6 +72,8 @@ export class TripLifecycleService {
     private readonly paymentProvider: TestPaymentProvider,
     private readonly prisma: PrismaService,
     private readonly stateMachine: TripStateMachine,
+    private readonly notifications: NotificationService,
+    private readonly notificationOutbox: NotificationOutboxService,
   ) {}
 
   async confirmDeparture(
@@ -46,17 +82,27 @@ export class TripLifecycleService {
     key: string,
   ): Promise<TripTransitionResult> {
     const trip = await this.driverTrip(driver, tripId);
-    return this.execute(driver, tripId, key, 'CONFIRM_DEPARTURE', async () => {
-      this.assertStatus(trip.status, TripStatus.DRIVER_SELECTED);
-      return this.stateMachine.transition({
-        tripId,
-        expectedVersion: trip.version,
-        newStatus: TripStatus.PAYMENT_PENDING,
-        actorId: driver.id,
-        actorType: TripStatusActorType.DRIVER,
-        reason: 'Driver confirmed departure',
-      });
-    });
+    return this.execute(
+      driver,
+      tripId,
+      key,
+      'CONFIRM_DEPARTURE',
+      async () => {
+        this.assertStatus(trip.status, TripStatus.DRIVER_SELECTED);
+        return this.stateMachine.transition({
+          tripId,
+          expectedVersion: trip.version,
+          newStatus: TripStatus.PAYMENT_PENDING,
+          actorId: driver.id,
+          actorType: TripStatusActorType.DRIVER,
+          reason: 'Driver confirmed departure',
+        });
+      },
+      {
+        passengerId: trip.passengerId,
+        selectedDriverId: trip.selectedDriverId,
+      },
+    );
   }
 
   async authorizePayment(
@@ -95,6 +141,10 @@ export class TripLifecycleService {
           reason: 'Test payment reservation confirmed',
         });
       },
+      {
+        passengerId: trip.passengerId,
+        selectedDriverId: trip.selectedDriverId,
+      },
     );
   }
 
@@ -104,25 +154,35 @@ export class TripLifecycleService {
     key: string,
   ): Promise<TripTransitionResult> {
     const trip = await this.driverTrip(driver, tripId);
-    return this.execute(driver, tripId, key, 'START_EN_ROUTE', async () => {
-      this.assertStatus(trip.status, TripStatus.PAYMENT_RESERVED);
-      const payment = await this.prisma.tripPayment.findUnique({
-        where: { tripId },
-      });
-      if (payment?.status !== TripPaymentStatus.RESERVED)
-        throw new ConflictException({
-          code: 'PAYMENT_NOT_RESERVED',
-          message: 'Payment must be reserved before departure',
+    return this.execute(
+      driver,
+      tripId,
+      key,
+      'START_EN_ROUTE',
+      async () => {
+        this.assertStatus(trip.status, TripStatus.PAYMENT_RESERVED);
+        const payment = await this.prisma.tripPayment.findUnique({
+          where: { tripId },
         });
-      return this.stateMachine.transition({
-        tripId,
-        expectedVersion: trip.version,
-        newStatus: TripStatus.DRIVER_EN_ROUTE,
-        actorId: driver.id,
-        actorType: TripStatusActorType.DRIVER,
-        reason: 'Driver started route to pickup',
-      });
-    });
+        if (payment?.status !== TripPaymentStatus.RESERVED)
+          throw new ConflictException({
+            code: 'PAYMENT_NOT_RESERVED',
+            message: 'Payment must be reserved before departure',
+          });
+        return this.stateMachine.transition({
+          tripId,
+          expectedVersion: trip.version,
+          newStatus: TripStatus.DRIVER_EN_ROUTE,
+          actorId: driver.id,
+          actorType: TripStatusActorType.DRIVER,
+          reason: 'Driver started route to pickup',
+        });
+      },
+      {
+        passengerId: trip.passengerId,
+        selectedDriverId: trip.selectedDriverId,
+      },
+    );
   }
 
   async arrive(
@@ -131,17 +191,27 @@ export class TripLifecycleService {
     key: string,
   ): Promise<TripTransitionResult> {
     const trip = await this.driverTrip(driver, tripId);
-    return this.execute(driver, tripId, key, 'ARRIVE', async () => {
-      this.assertStatus(trip.status, TripStatus.DRIVER_EN_ROUTE);
-      return this.stateMachine.transition({
-        tripId,
-        expectedVersion: trip.version,
-        newStatus: TripStatus.DRIVER_ARRIVED,
-        actorId: driver.id,
-        actorType: TripStatusActorType.DRIVER,
-        reason: 'Driver arrived at pickup',
-      });
-    });
+    return this.execute(
+      driver,
+      tripId,
+      key,
+      'ARRIVE',
+      async () => {
+        this.assertStatus(trip.status, TripStatus.DRIVER_EN_ROUTE);
+        return this.stateMachine.transition({
+          tripId,
+          expectedVersion: trip.version,
+          newStatus: TripStatus.DRIVER_ARRIVED,
+          actorId: driver.id,
+          actorType: TripStatusActorType.DRIVER,
+          reason: 'Driver arrived at pickup',
+        });
+      },
+      {
+        passengerId: trip.passengerId,
+        selectedDriverId: trip.selectedDriverId,
+      },
+    );
   }
 
   async issueBoardingCode(
@@ -176,47 +246,57 @@ export class TripLifecycleService {
     key: string,
   ): Promise<TripTransitionResult> {
     const trip = await this.driverTrip(driver, tripId);
-    return this.execute(driver, tripId, key, 'START_TRIP', async () => {
-      this.assertStatus(trip.status, TripStatus.DRIVER_ARRIVED);
-      const boarding = await this.prisma.tripBoardingCode.findUnique({
-        where: { tripId },
-      });
-      if (!boarding || boarding.usedAt || boarding.expiresAt <= new Date())
-        throw new ConflictException({
-          code: 'BOARDING_CODE_UNAVAILABLE',
-          message: 'Boarding code is unavailable or expired',
+    return this.execute(
+      driver,
+      tripId,
+      key,
+      'START_TRIP',
+      async () => {
+        this.assertStatus(trip.status, TripStatus.DRIVER_ARRIVED);
+        const boarding = await this.prisma.tripBoardingCode.findUnique({
+          where: { tripId },
         });
-      if (
-        boarding.attempts >=
-        this.config.getOrThrow<number>('trips.boardingCodeMaxAttempts')
-      )
-        throw new ConflictException({
-          code: 'BOARDING_CODE_ATTEMPTS_EXCEEDED',
-          message: 'Boarding code attempt limit exceeded',
-        });
-      if (!this.matchesCode(code, boarding.codeHash)) {
+        if (!boarding || boarding.usedAt || boarding.expiresAt <= new Date())
+          throw new ConflictException({
+            code: 'BOARDING_CODE_UNAVAILABLE',
+            message: 'Boarding code is unavailable or expired',
+          });
+        if (
+          boarding.attempts >=
+          this.config.getOrThrow<number>('trips.boardingCodeMaxAttempts')
+        )
+          throw new ConflictException({
+            code: 'BOARDING_CODE_ATTEMPTS_EXCEEDED',
+            message: 'Boarding code attempt limit exceeded',
+          });
+        if (!this.matchesCode(code, boarding.codeHash)) {
+          await this.prisma.tripBoardingCode.update({
+            where: { tripId },
+            data: { attempts: { increment: 1 } },
+          });
+          throw new BadRequestException({
+            code: 'INVALID_BOARDING_CODE',
+            message: 'Boarding code is invalid',
+          });
+        }
         await this.prisma.tripBoardingCode.update({
           where: { tripId },
-          data: { attempts: { increment: 1 } },
+          data: { usedAt: new Date() },
         });
-        throw new BadRequestException({
-          code: 'INVALID_BOARDING_CODE',
-          message: 'Boarding code is invalid',
+        return this.stateMachine.transition({
+          tripId,
+          expectedVersion: trip.version,
+          newStatus: TripStatus.IN_PROGRESS,
+          actorId: driver.id,
+          actorType: TripStatusActorType.DRIVER,
+          reason: 'Boarding code verified',
         });
-      }
-      await this.prisma.tripBoardingCode.update({
-        where: { tripId },
-        data: { usedAt: new Date() },
-      });
-      return this.stateMachine.transition({
-        tripId,
-        expectedVersion: trip.version,
-        newStatus: TripStatus.IN_PROGRESS,
-        actorId: driver.id,
-        actorType: TripStatusActorType.DRIVER,
-        reason: 'Boarding code verified',
-      });
-    });
+      },
+      {
+        passengerId: trip.passengerId,
+        selectedDriverId: trip.selectedDriverId,
+      },
+    );
   }
 
   async completeTrip(
@@ -225,37 +305,47 @@ export class TripLifecycleService {
     key: string,
   ): Promise<TripTransitionResult> {
     const trip = await this.driverTrip(driver, tripId);
-    return this.execute(driver, tripId, key, 'COMPLETE_TRIP', async () => {
-      this.assertStatus(trip.status, TripStatus.IN_PROGRESS);
-      const completed = await this.stateMachine.transition({
-        tripId,
-        expectedVersion: trip.version,
-        newStatus: TripStatus.COMPLETED,
-        actorId: driver.id,
-        actorType: TripStatusActorType.DRIVER,
-        reason: 'Driver completed trip',
-      });
-      const payment = await this.prisma.tripPayment.findUnique({
-        where: { tripId },
-      });
-      if (!payment)
-        throw new ConflictException({
-          code: 'PAYMENT_NOT_FOUND',
-          message: 'Payment reservation was not found',
+    return this.execute(
+      driver,
+      tripId,
+      key,
+      'COMPLETE_TRIP',
+      async () => {
+        this.assertStatus(trip.status, TripStatus.IN_PROGRESS);
+        const completed = await this.stateMachine.transition({
+          tripId,
+          expectedVersion: trip.version,
+          newStatus: TripStatus.COMPLETED,
+          actorId: driver.id,
+          actorType: TripStatusActorType.DRIVER,
+          reason: 'Driver completed trip',
         });
-      await this.paymentProvider.capture(payment.providerReference);
-      await this.prisma.tripPayment.update({
-        where: { tripId },
-        data: { status: TripPaymentStatus.SETTLED, settledAt: new Date() },
-      });
-      return this.stateMachine.transition({
-        tripId,
-        expectedVersion: completed.version,
-        newStatus: TripStatus.SETTLED,
-        actorType: TripStatusActorType.PAYMENT,
-        reason: 'Test payment settlement confirmed',
-      });
-    });
+        const payment = await this.prisma.tripPayment.findUnique({
+          where: { tripId },
+        });
+        if (!payment)
+          throw new ConflictException({
+            code: 'PAYMENT_NOT_FOUND',
+            message: 'Payment reservation was not found',
+          });
+        await this.paymentProvider.capture(payment.providerReference);
+        await this.prisma.tripPayment.update({
+          where: { tripId },
+          data: { status: TripPaymentStatus.SETTLED, settledAt: new Date() },
+        });
+        return this.stateMachine.transition({
+          tripId,
+          expectedVersion: completed.version,
+          newStatus: TripStatus.SETTLED,
+          actorType: TripStatusActorType.PAYMENT,
+          reason: 'Test payment settlement confirmed',
+        });
+      },
+      {
+        passengerId: trip.passengerId,
+        selectedDriverId: trip.selectedDriverId,
+      },
+    );
   }
 
   private async execute(
@@ -264,6 +354,7 @@ export class TripLifecycleService {
     key: string,
     action: LifecycleAction,
     run: () => Promise<TripTransitionResult>,
+    notifyContext: { passengerId: string; selectedDriverId: string | null },
   ): Promise<TripTransitionResult> {
     const idempotencyKey = key.trim();
     if (!idempotencyKey || idempotencyKey.length > 255)
@@ -276,7 +367,7 @@ export class TripLifecycleService {
     });
     if (existing) return existing.result as unknown as TripTransitionResult;
     const result = await run();
-    await this.prisma.tripLifecycleAction.create({
+    const lifecycleAction = await this.prisma.tripLifecycleAction.create({
       data: {
         tripId,
         action,
@@ -289,7 +380,52 @@ export class TripLifecycleService {
         result: result as unknown as Prisma.InputJsonValue,
       },
     });
+    await this.notifyLifecycleAction(
+      action,
+      lifecycleAction.id,
+      tripId,
+      notifyContext,
+    );
     return result;
+  }
+
+  /**
+   * Push is never the source of truth here either: the state transition
+   * itself already committed above via TripStateMachine.transition's own
+   * transaction (which also enqueues the authoritative WebSocket event via
+   * RealtimeOutboxService) — this only best-effort-enqueues the *push*
+   * wake-up on top of an already-durable status change, using the
+   * lifecycle action's own id as the idempotency key so a retried request
+   * with the same Idempotency-Key never enqueues a second push (see
+   * docs/notifications/retries.md).
+   */
+  private async notifyLifecycleAction(
+    action: LifecycleAction,
+    lifecycleActionId: string,
+    tripId: string,
+    context: { passengerId: string; selectedDriverId: string | null },
+  ): Promise<void> {
+    const targets = NOTIFICATIONS_BY_ACTION[action];
+    if (!targets) return;
+
+    for (const target of targets) {
+      const userId =
+        target.recipient === 'PASSENGER'
+          ? context.passengerId
+          : context.selectedDriverId;
+      if (!userId) continue;
+
+      const draft = this.notifications.createDraft({
+        userId,
+        type: target.type,
+        application: target.recipient,
+        entityType: 'TRIP',
+        entityId: tripId,
+        idempotencyKey: lifecycleActionId,
+        templateParams: { tripId },
+      });
+      await this.notificationOutbox.enqueue(this.prisma, draft);
+    }
   }
 
   private async passengerTrip(user: AuthenticatedUser, tripId: string) {
@@ -322,6 +458,8 @@ export class TripLifecycleService {
         version: true,
         passengerPriceKopecks: true,
         finalPriceKopecks: true,
+        passengerId: true,
+        selectedDriverId: true,
       },
     });
     if (!trip)

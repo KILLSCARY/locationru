@@ -11,6 +11,9 @@ import {
   TripStateMachine,
   type TripTransitionResult,
 } from './trip-state-machine.service.js';
+import type { NotificationOutboxService } from '../notifications/notification-outbox.service.js';
+import type { NotificationDraft } from '../notifications/notification.service.js';
+import type { NotificationService } from '../notifications/notification.service.js';
 
 const passenger: AuthenticatedUser = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -94,6 +97,7 @@ describe('TripService', () => {
     transition: (input: unknown) => Promise<TripTransitionResult>;
   };
   let tripService: TripService;
+  let enqueuedDrafts: NotificationDraft[];
 
   beforeEach(() => {
     prisma = new InMemoryTripPrisma();
@@ -103,6 +107,34 @@ describe('TripService', () => {
         status: TripStatus.SEARCHING,
         version: 1,
       }),
+    };
+    enqueuedDrafts = [];
+    const notifications = {
+      createDraft: (input: {
+        userId: string;
+        type: string;
+        application: string;
+        entityType: string;
+        entityId: string;
+        idempotencyKey: string;
+      }) =>
+        ({
+          ...input,
+          title: 'title',
+          body: 'body',
+          templateVersion: 1,
+          deepLink: null,
+          priority: 'HIGH',
+          ttlSeconds: 30,
+          collapseStrategy: 'NONE',
+          collapseKey: `collapse:${input.entityId}`,
+          deduplicationKey: `dedup:${input.idempotencyKey}`,
+        }) as unknown as NotificationDraft,
+    };
+    const notificationOutbox = {
+      enqueue: async (_client: unknown, draft: NotificationDraft) => {
+        enqueuedDrafts.push(draft);
+      },
     };
     const mapsService = {
       buildRoute: async () => ({
@@ -130,6 +162,8 @@ describe('TripService', () => {
       prisma as unknown as PrismaService,
       stateMachine as unknown as TripStateMachine,
       mapsService as unknown as MapsService,
+      notifications as unknown as NotificationService,
+      notificationOutbox as unknown as NotificationOutboxService,
     );
   });
 
@@ -265,6 +299,48 @@ describe('TripService', () => {
       version: 3,
     });
     expect(transitions).toBe(0);
+  });
+
+  it('notifies the selected driver of DRIVER_TRIP_CANCELLED when the passenger cancels', async () => {
+    prisma.trip.findFirst = async () => ({
+      id: 'trip-1',
+      status: TripStatus.DRIVER_SELECTED,
+      version: 2,
+      selectedDriverId: 'driver-1',
+    });
+    stateMachine.transition = async () => ({
+      id: 'trip-1',
+      status: TripStatus.CANCELLED_BY_PASSENGER,
+      version: 3,
+    });
+
+    await tripService.cancel(passenger, 'trip-1');
+
+    expect(enqueuedDrafts).toHaveLength(1);
+    expect(enqueuedDrafts[0]).toMatchObject({
+      userId: 'driver-1',
+      type: 'DRIVER_TRIP_CANCELLED',
+      application: 'DRIVER',
+      entityId: 'trip-1',
+    });
+  });
+
+  it('does not attempt to notify anyone when the trip has no selected driver yet', async () => {
+    prisma.trip.findFirst = async () => ({
+      id: 'trip-1',
+      status: TripStatus.SEARCHING,
+      version: 1,
+      selectedDriverId: null,
+    });
+    stateMachine.transition = async () => ({
+      id: 'trip-1',
+      status: TripStatus.CANCELLED_BY_PASSENGER,
+      version: 2,
+    });
+
+    await tripService.cancel(passenger, 'trip-1');
+
+    expect(enqueuedDrafts).toHaveLength(0);
   });
 });
 

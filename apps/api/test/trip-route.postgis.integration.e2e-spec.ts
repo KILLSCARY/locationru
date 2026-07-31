@@ -52,6 +52,8 @@ describePostgis('Trip route persistence PostGIS integration', () => {
       prisma,
       stateMachine,
       mapsService,
+      {} as unknown as ConstructorParameters<typeof TripService>[4],
+      {} as unknown as ConstructorParameters<typeof TripService>[5],
     );
   });
 

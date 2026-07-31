@@ -11,9 +11,15 @@ import { ConfigService } from '@nestjs/config';
 
 import type { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../database/prisma.service.js';
-import { TripStatus, TripStatusActorType } from '../generated/prisma/client.js';
+import {
+  NotificationType,
+  TripStatus,
+  TripStatusActorType,
+} from '../generated/prisma/client.js';
 import { MapsService } from '../maps/maps.service.js';
 import type { RouteRequest, RouteResult } from '../maps/maps.types.js';
+import { NotificationOutboxService } from '../notifications/notification-outbox.service.js';
+import { NotificationService } from '../notifications/notification.service.js';
 import {
   TripStateMachine,
   type TripTransitionResult,
@@ -100,6 +106,8 @@ export class TripService {
     private readonly prisma: PrismaService,
     private readonly stateMachine: TripStateMachine,
     private readonly mapsService: MapsService,
+    private readonly notifications: NotificationService,
+    private readonly notificationOutbox: NotificationOutboxService,
   ) {}
 
   async create(
@@ -361,13 +369,15 @@ export class TripService {
     }
 
     try {
-      return await this.stateMachine.transition({
+      const result = await this.stateMachine.transition({
         tripId,
         expectedVersion: trip.version,
         newStatus: TripStatus.CANCELLED_BY_PASSENGER,
         actorType: TripStatusActorType.PASSENGER,
         actorId: passenger.id,
       });
+      await this.notifyDriverOfCancellation(trip.selectedDriverId, tripId);
+      return result;
     } catch (error) {
       const latest = await this.findPassengerTrip(passenger, tripId);
 
@@ -379,10 +389,29 @@ export class TripService {
     }
   }
 
+  /** Best-effort push wake-up on top of the already-committed cancellation above (see TripLifecycleService.notifyLifecycleAction for the same reasoning). Deduplication key is the trip id itself — a trip can only be cancelled-by-passenger once. */
+  private async notifyDriverOfCancellation(
+    selectedDriverId: string | null,
+    tripId: string,
+  ): Promise<void> {
+    if (!selectedDriverId) return;
+
+    const draft = this.notifications.createDraft({
+      userId: selectedDriverId,
+      type: NotificationType.DRIVER_TRIP_CANCELLED,
+      application: 'DRIVER' as never,
+      entityType: 'TRIP',
+      entityId: tripId,
+      idempotencyKey: `trip-cancelled:${tripId}`,
+      templateParams: { tripId },
+    });
+    await this.notificationOutbox.enqueue(this.prisma, draft);
+  }
+
   private async findPassengerTrip(
     passenger: AuthenticatedUser,
     tripId: string,
-  ): Promise<TripTransitionResult> {
+  ): Promise<TripTransitionResult & { selectedDriverId: string | null }> {
     this.assertPassenger(passenger);
     const trip = await this.prisma.trip.findFirst({
       where: {
@@ -393,6 +422,7 @@ export class TripService {
         id: true,
         status: true,
         version: true,
+        selectedDriverId: true,
       },
     });
 

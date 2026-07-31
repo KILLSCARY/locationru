@@ -17,11 +17,14 @@ import {
   DriverBidStatus,
   DriverStatus,
   DriverVerificationStatus,
+  NotificationType,
   TripStatus,
   TripStatusActorType,
   VehicleStatus,
   RealtimeEventType,
 } from '../generated/prisma/client.js';
+import { NotificationOutboxService } from '../notifications/notification-outbox.service.js';
+import { NotificationService } from '../notifications/notification.service.js';
 import { RealtimeOutboxService } from '../realtime/realtime-outbox.service.js';
 import type { CreateDriverBidDto } from './dto/create-driver-bid.dto.js';
 
@@ -92,6 +95,8 @@ export class BidsService {
     private readonly prisma: PrismaService,
     private readonly fareCalculator: FareCalculator,
     private readonly realtimeOutbox: RealtimeOutboxService,
+    private readonly notifications: NotificationService,
+    private readonly notificationOutbox: NotificationOutboxService,
   ) {}
 
   async getAvailableTrips(
@@ -220,6 +225,17 @@ export class BidsService {
           RealtimeEventType.BID_CREATED,
           this.bidEventPayload(bid, driver.id),
         );
+
+        const bidDraft = this.notifications.createDraft({
+          userId: trip.passengerId,
+          type: NotificationType.PASSENGER_BID_RECEIVED,
+          application: 'PASSENGER' as never,
+          entityType: 'TRIP',
+          entityId: trip.id,
+          idempotencyKey: bid.id,
+          templateParams: { tripId: trip.id },
+        });
+        await this.notificationOutbox.enqueue(transaction, bidDraft);
 
         return bid;
       });
@@ -432,17 +448,29 @@ export class BidsService {
       });
       if (accepted.count !== 1) throw this.bidVersionConflict();
 
-      await transaction.driverBid.updateMany({
+      // Captured before rejecting so we know exactly which drivers to notify
+      // — updateMany alone doesn't return the affected rows.
+      const rejectedBids = await transaction.driverBid.findMany({
         where: {
           tripId: trip.id,
           id: { not: bid.id },
           status: DriverBidStatus.ACTIVE,
         },
-        data: {
-          status: DriverBidStatus.REJECTED,
-          version: { increment: 1 },
-        },
+        select: { id: true, driverId: true },
       });
+      if (rejectedBids.length) {
+        await transaction.driverBid.updateMany({
+          where: {
+            tripId: trip.id,
+            id: { not: bid.id },
+            status: DriverBidStatus.ACTIVE,
+          },
+          data: {
+            status: DriverBidStatus.REJECTED,
+            version: { increment: 1 },
+          },
+        });
+      }
       await transaction.tripStatusHistory.create({
         data: {
           tripId: trip.id,
@@ -467,6 +495,13 @@ export class BidsService {
           version: bid.version + 1,
         },
       );
+      await this.notifyBidSelection(
+        transaction,
+        trip.id,
+        passenger.id,
+        bid.driverId,
+        rejectedBids,
+      );
 
       return {
         tripId: trip.id,
@@ -478,6 +513,67 @@ export class BidsService {
         version: trip.version + 1,
       };
     });
+  }
+
+  /**
+   * Transactional (runs inside select()'s own $transaction, unlike
+   * TripLifecycleService's best-effort enqueue): notifies the accepted
+   * driver and the passenger, notifies every rejected driver, and cancels
+   * any still-PENDING DRIVER_NEW_TRIP_AVAILABLE push to a candidate driver
+   * who was never selected — "cancelled when another driver is chosen"
+   * (section 12).
+   */
+  private async notifyBidSelection(
+    transaction: Prisma.TransactionClient,
+    tripId: string,
+    passengerId: string,
+    acceptedDriverId: string,
+    rejectedBids: Array<{ id: string; driverId: string }>,
+  ): Promise<void> {
+    await this.notificationOutbox.enqueue(
+      transaction,
+      this.notifications.createDraft({
+        userId: acceptedDriverId,
+        type: NotificationType.DRIVER_BID_ACCEPTED,
+        application: 'DRIVER' as never,
+        entityType: 'TRIP',
+        entityId: tripId,
+        idempotencyKey: `bid-accepted:${tripId}`,
+        templateParams: { tripId },
+      }),
+    );
+    await this.notificationOutbox.enqueue(
+      transaction,
+      this.notifications.createDraft({
+        userId: passengerId,
+        type: NotificationType.PASSENGER_DRIVER_SELECTED,
+        application: 'PASSENGER' as never,
+        entityType: 'TRIP',
+        entityId: tripId,
+        idempotencyKey: `driver-selected:${tripId}`,
+        templateParams: { tripId },
+      }),
+    );
+    for (const rejected of rejectedBids) {
+      await this.notificationOutbox.enqueue(
+        transaction,
+        this.notifications.createDraft({
+          userId: rejected.driverId,
+          type: NotificationType.DRIVER_BID_REJECTED,
+          application: 'DRIVER' as never,
+          entityType: 'TRIP',
+          entityId: tripId,
+          idempotencyKey: `bid-rejected:${rejected.id}`,
+          templateParams: { tripId },
+        }),
+      );
+    }
+    await this.notificationOutbox.cancelPendingForEntity(
+      transaction,
+      NotificationType.DRIVER_NEW_TRIP_AVAILABLE,
+      tripId,
+      { exceptUserId: acceptedDriverId },
+    );
   }
 
   private async lockTrip(
