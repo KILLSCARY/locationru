@@ -26,7 +26,6 @@
     "staging:test:sms": "tsx scripts/staging-test-sms.ts"
   },
   "dependencies": {
-    "@resilient-taxi/config": "workspace:*",
     "@aws-sdk/client-s3": "3.906.0",
     "@aws-sdk/s3-request-presigner": "3.906.0",
     "@nestjs/common": "11.1.28",
@@ -39,8 +38,10 @@
     "@nestjs/websockets": "11.1.28",
     "@prisma/adapter-pg": "7.9.0",
     "@prisma/client": "7.9.0",
+    "@resilient-taxi/config": "workspace:*",
     "class-transformer": "0.5.1",
     "class-validator": "0.14.3",
+    "firebase-admin": "^13.10.0",
     "ioredis": "5.11.1",
     "joi": "18.0.2",
     "pg": "8.18.0",

@@ -147,20 +147,24 @@ enum TripStatusActorType {
 }
 
 model User {
-  id                  String               @id @default(uuid()) @db.Uuid
-  phone               String               @unique(map: "users_phone_key") @db.VarChar(16)
-  role                UserRole
-  status              UserStatus           @default(PENDING)
-  createdAt           DateTime             @default(now()) @db.Timestamptz(3)
-  updatedAt           DateTime             @updatedAt @db.Timestamptz(3)
-  passengerProfile    PassengerProfile?
-  driverProfile       DriverProfile?
-  deviceSessions      DeviceSession[]
-  passengerTrips      Trip[]               @relation("TripPassenger")
-  selectedTrips       Trip[]               @relation("TripSelectedDriver")
-  tripIdempotencyKeys TripIdempotencyKey[]
-  adminAuditLogs      AdminAuditLog[]      @relation("AdminAuditActor")
-  storedDocuments     StoredDocument[]
+  id                         String                      @id @default(uuid()) @db.Uuid
+  phone                      String                      @unique(map: "users_phone_key") @db.VarChar(16)
+  role                       UserRole
+  status                     UserStatus                  @default(PENDING)
+  createdAt                  DateTime                    @default(now()) @db.Timestamptz(3)
+  updatedAt                  DateTime                    @updatedAt @db.Timestamptz(3)
+  passengerProfile           PassengerProfile?
+  driverProfile              DriverProfile?
+  deviceSessions             DeviceSession[]
+  passengerTrips             Trip[]                      @relation("TripPassenger")
+  selectedTrips              Trip[]                      @relation("TripSelectedDriver")
+  tripIdempotencyKeys        TripIdempotencyKey[]
+  adminAuditLogs             AdminAuditLog[]             @relation("AdminAuditActor")
+  storedDocuments            StoredDocument[]
+  devicePushTokens           DevicePushToken[]
+  notifications              Notification[]
+  notificationPreferences    NotificationPreference[]
+  notificationPrivacySetting NotificationPrivacySetting?
 
   @@index([role, status], map: "users_role_status_idx")
   @@index([createdAt], map: "users_created_at_idx")
@@ -234,25 +238,26 @@ model Vehicle {
 }
 
 model DeviceSession {
-  id               String         @id @default(uuid()) @db.Uuid
-  userId           String         @db.Uuid
-  deviceId         String         @db.VarChar(255)
+  id               String            @id @default(uuid()) @db.Uuid
+  userId           String            @db.Uuid
+  deviceId         String            @db.VarChar(255)
   platform         DevicePlatform
-  appVersion       String?        @db.VarChar(32)
-  refreshTokenHash String         @db.VarChar(255)
+  appVersion       String?           @db.VarChar(32)
+  refreshTokenHash String            @db.VarChar(255)
   /**
    * Constant across every refresh-token rotation for this session; changes
    * only when a fresh login replaces the session outright. Reusing an old
    * refresh token revokes every session sharing this id (see AuthService).
    */
-  tokenFamilyId    String         @default(uuid()) @db.Uuid
-  createdAt        DateTime       @default(now()) @db.Timestamptz(3)
-  lastSeenAt       DateTime       @default(now()) @db.Timestamptz(3)
-  lastIpHash       String?        @db.VarChar(128)
-  userAgentSummary String?        @db.VarChar(255)
-  revokedAt        DateTime?      @db.Timestamptz(3)
-  revokeReason     String?        @db.VarChar(64)
-  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenFamilyId    String            @default(uuid()) @db.Uuid
+  createdAt        DateTime          @default(now()) @db.Timestamptz(3)
+  lastSeenAt       DateTime          @default(now()) @db.Timestamptz(3)
+  lastIpHash       String?           @db.VarChar(128)
+  userAgentSummary String?           @db.VarChar(255)
+  revokedAt        DateTime?         @db.Timestamptz(3)
+  revokeReason     String?           @db.VarChar(64)
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  devicePushTokens DevicePushToken[]
 
   @@unique([userId, deviceId], map: "device_sessions_user_device_key")
   @@index([userId, revokedAt], map: "device_sessions_user_revoked_idx")
@@ -748,4 +753,325 @@ model SmsWebhookEvent {
 
   @@index([providerMessageId], map: "sms_webhook_events_provider_message_id_idx")
   @@map("sms_webhook_events")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications (Task 28): push delivery + an in-app inbox that survives
+// even when push itself fails or is disabled. See docs/notifications/*.md.
+// Push is never the source of truth — opening a notification always
+// re-syncs from REST/WebSocket; these tables exist to get the user's
+// attention and to make delivery auditable, not to hold live trip state.
+// ---------------------------------------------------------------------------
+
+enum PushPlatform {
+  ANDROID
+  IOS
+}
+
+enum PushApplication {
+  PASSENGER
+  DRIVER
+}
+
+enum PushProviderType {
+  DEVELOPMENT
+  STAGING
+  FCM
+  APNS
+}
+
+enum PushTokenStatus {
+  ACTIVE
+  INVALID
+  REVOKED
+  EXPIRED
+}
+
+/**
+ * Mirrors AppEnvironment (packages/config) as its own Prisma enum — kept
+ * separate so a raw token's environment is a durable, queryable column
+ * rather than something inferred at read time. Always set from the
+ * server's own `app.appEnvironment` at registration, never trusted from
+ * the client — see docs/notifications/device-tokens.md for why that's
+ * what actually prevents a production token being registered in staging.
+ */
+enum PushEnvironment {
+  DEVELOPMENT
+  STAGING
+  PRODUCTION
+}
+
+enum NotificationType {
+  DRIVER_NEW_TRIP_AVAILABLE
+  DRIVER_BID_ACCEPTED
+  DRIVER_BID_REJECTED
+  DRIVER_TRIP_CANCELLED
+  DRIVER_PAYMENT_RESERVED
+  DRIVER_PICKUP_REMINDER
+  DRIVER_LOCATION_DEGRADED
+  DRIVER_DOCUMENT_EXPIRING
+  DRIVER_ACCOUNT_APPROVED
+  DRIVER_ACCOUNT_REJECTED
+  DRIVER_PAYOUT_COMPLETED
+  DRIVER_PAYOUT_FAILED
+  PASSENGER_BID_RECEIVED
+  PASSENGER_DRIVER_SELECTED
+  PASSENGER_DRIVER_EN_ROUTE
+  PASSENGER_DRIVER_ARRIVED
+  PASSENGER_TRIP_STARTED
+  PASSENGER_TRIP_COMPLETED
+  PASSENGER_TRIP_CANCELLED
+  PASSENGER_PAYMENT_RESERVED
+  PASSENGER_PAYMENT_FAILED
+  PASSENGER_REFUND_COMPLETED
+  SECURITY_SESSION_REVOKED
+  SYSTEM_SERVICE_NOTICE
+}
+
+enum NotificationCategory {
+  TRIP_OFFERS
+  ACTIVE_TRIP
+  PAYMENTS
+  DRIVER_OPERATIONS
+  ACCOUNT
+  SECURITY
+}
+
+enum NotificationStatus {
+  PENDING
+  QUEUED
+  SENT
+  PARTIALLY_SENT
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+/**
+ * CRITICAL is reserved for NotificationCategory.SECURITY events — never assigned to an ordinary trip/bid/payment notification.
+ */
+enum NotificationPriority {
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
+enum NotificationDeliveryStatus {
+  QUEUED
+  SENT
+  PROVIDER_ACCEPTED
+  DELIVERED
+  OPENED
+  RETRY_SCHEDULED
+  FAILED_TEMPORARY
+  FAILED_PERMANENT
+  TOKEN_INVALID
+}
+
+/**
+ * Outbox-row lifecycle, distinct from NotificationStatus (which tracks the rendered Notification, created only once an outbox row is processed).
+ */
+enum NotificationOutboxStatus {
+  PENDING
+  PROCESSING
+  DELIVERED
+  CANCELLED
+  EXPIRED
+  DEAD_LETTER
+}
+
+/**
+ * What a device's lock screen may show for a notification's title/body. Defaults to GENERIC for sensitive categories — see docs/notifications/privacy.md.
+ */
+enum NotificationPreviewMode {
+  FULL
+  GENERIC
+  HIDDEN
+}
+
+/**
+ * A registered push destination. One row per (application, device) — the
+ * same physical phone has independent rows for a passenger install and a
+ * driver install. `encryptedToken` is the only place the raw provider
+ * token is stored (AES-256-GCM, key from PUSH_TOKEN_ENCRYPTION_KEY) and it
+ * is never logged; `tokenHash` (HMAC-SHA256) is what uniqueness and
+ * lookups use instead. Replacing a token (refresh) revokes the old row
+ * rather than updating it in place, preserving delivery history.
+ */
+model DevicePushToken {
+  id                      String                 @id @default(uuid()) @db.Uuid
+  userId                  String                 @db.Uuid
+  deviceSessionId         String                 @db.Uuid
+  deviceId                String                 @db.VarChar(255)
+  application             PushApplication
+  platform                PushPlatform
+  provider                PushProviderType
+  environment             PushEnvironment
+  encryptedToken          String                 @db.Text
+  tokenHash               String                 @unique(map: "device_push_tokens_token_hash_key") @db.VarChar(128)
+  status                  PushTokenStatus        @default(ACTIVE)
+  appVersion              String?                @db.VarChar(32)
+  osVersion               String?                @db.VarChar(32)
+  locale                  String?                @db.VarChar(16)
+  timezone                String?                @db.VarChar(64)
+  notificationsPermission Boolean
+  lastRegisteredAt        DateTime               @default(now()) @db.Timestamptz(3)
+  lastUsedAt              DateTime?              @db.Timestamptz(3)
+  invalidatedAt           DateTime?              @db.Timestamptz(3)
+  invalidationReason      String?                @db.VarChar(64)
+  createdAt               DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime               @updatedAt @db.Timestamptz(3)
+  user                    User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceSession           DeviceSession          @relation(fields: [deviceSessionId], references: [id], onDelete: Cascade)
+  deliveries              NotificationDelivery[]
+
+  @@index([userId], map: "device_push_tokens_user_idx")
+  @@index([deviceSessionId], map: "device_push_tokens_device_session_idx")
+  @@index([status], map: "device_push_tokens_status_idx")
+  @@index([application, environment], map: "device_push_tokens_app_environment_idx")
+  @@map("device_push_tokens")
+}
+
+/**
+ * Transactional outbox for notification-worthy domain events — enqueued in
+ * the same Prisma transaction as the business write it announces (mirrors
+ * RealtimeOutboxEvent's pattern; see RealtimeOutboxService). One row per
+ * intended recipient. `deduplicationKey` is the idempotency guard: the same
+ * source event (e.g. a trip transition retried after a crash) must never
+ * enqueue twice, and the worker also upserts Notification by this same key
+ * so a crash between "Notification created" and "outbox row marked
+ * DELIVERED" can't double-send either.
+ */
+model NotificationOutboxEvent {
+  id               String                   @id @default(uuid()) @db.Uuid
+  type             NotificationType
+  userId           String                   @db.Uuid
+  application      PushApplication
+  entityType       String                   @db.VarChar(32)
+  entityId         String?                  @db.Uuid
+  payload          Json
+  priority         NotificationPriority
+  deduplicationKey String                   @unique(map: "notification_outbox_events_dedup_key_key") @db.VarChar(255)
+  status           NotificationOutboxStatus @default(PENDING)
+  attempts         Int                      @default(0)
+  maxAttempts      Int
+  availableAt      DateTime                 @default(now()) @db.Timestamptz(3)
+  expiresAt        DateTime?                @db.Timestamptz(3)
+  notificationId   String?                  @db.Uuid
+  lastError        String?                  @db.VarChar(512)
+  createdAt        DateTime                 @default(now()) @db.Timestamptz(3)
+  processedAt      DateTime?                @db.Timestamptz(3)
+
+  @@index([status, availableAt], map: "notification_outbox_events_status_available_at_idx")
+  @@index([userId, type], map: "notification_outbox_events_user_type_idx")
+  @@map("notification_outbox_events")
+}
+
+/**
+ * The durable, user-facing notification record — exists independently of
+ * whether push delivery succeeded (see NotificationDelivery), so it can
+ * always be shown in the in-app inbox. `titleTemplate`/`bodyTemplate` hold
+ * the actually-rendered text at send time (not a template key) alongside
+ * `templateVersion`, so historical/admin views show exactly what a user
+ * saw even after a template is edited later.
+ */
+model Notification {
+  id               String                 @id @default(uuid()) @db.Uuid
+  userId           String                 @db.Uuid
+  type             NotificationType
+  application      PushApplication
+  entityType       String                 @db.VarChar(32)
+  entityId         String?                @db.Uuid
+  titleTemplate    String                 @db.VarChar(128)
+  bodyTemplate     String                 @db.VarChar(512)
+  templateVersion  Int
+  payload          Json
+  status           NotificationStatus     @default(PENDING)
+  priority         NotificationPriority
+  deduplicationKey String                 @unique(map: "notifications_dedup_key_key") @db.VarChar(255)
+  scheduledAt      DateTime               @db.Timestamptz(3)
+  createdAt        DateTime               @default(now()) @db.Timestamptz(3)
+  sentAt           DateTime?              @db.Timestamptz(3)
+  deliveredAt      DateTime?              @db.Timestamptz(3)
+  openedAt         DateTime?              @db.Timestamptz(3)
+  /**
+   * Marked via POST .../read or read-all — distinct from openedAt (a push tap), since the in-app inbox can mark something read without the push ever being opened.
+   */
+  readAt           DateTime?              @db.Timestamptz(3)
+  failedAt         DateTime?              @db.Timestamptz(3)
+  expiresAt        DateTime?              @db.Timestamptz(3)
+  user             User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries       NotificationDelivery[]
+
+  @@index([userId, createdAt], map: "notifications_user_created_at_idx")
+  @@index([userId, readAt], map: "notifications_user_read_at_idx")
+  @@index([status], map: "notifications_status_idx")
+  @@map("notifications")
+}
+
+/**
+ * One row per (Notification, DevicePushToken) delivery attempt. Multiple
+ * rows accumulate across retries (see `attempt`). PROVIDER_ACCEPTED means
+ * only that FCM/APNs queued the message — never treated as proof the user
+ * actually saw it; OPENED is the only status that reflects real viewing,
+ * set when the client reports the notificationId back via POST .../opened.
+ */
+model NotificationDelivery {
+  id                String                     @id @default(uuid()) @db.Uuid
+  notificationId    String                     @db.Uuid
+  devicePushTokenId String                     @db.Uuid
+  provider          PushProviderType
+  providerMessageId String?                    @db.VarChar(255)
+  attempt           Int                        @default(1)
+  status            NotificationDeliveryStatus @default(QUEUED)
+  errorCode         String?                    @db.VarChar(64)
+  errorCategory     String?                    @db.VarChar(32)
+  sentAt            DateTime?                  @db.Timestamptz(3)
+  acknowledgedAt    DateTime?                  @db.Timestamptz(3)
+  failedAt          DateTime?                  @db.Timestamptz(3)
+  nextRetryAt       DateTime?                  @db.Timestamptz(3)
+  createdAt         DateTime                   @default(now()) @db.Timestamptz(3)
+  notification      Notification               @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  devicePushToken   DevicePushToken            @relation(fields: [devicePushTokenId], references: [id], onDelete: Cascade)
+
+  @@index([notificationId], map: "notification_deliveries_notification_idx")
+  @@index([devicePushTokenId], map: "notification_deliveries_device_push_token_idx")
+  @@index([status, nextRetryAt], map: "notification_deliveries_status_next_retry_idx")
+  @@map("notification_deliveries")
+}
+
+/**
+ * Per (user, application, category) opt-out. Rows are optional — a missing
+ * row means the category's default (enabled) applies. SECURITY and an
+ * in-progress ACTIVE_TRIP are enforced server-side as always-on regardless
+ * of what's stored here (see NotificationPreferenceService); the OS-level
+ * permission still overrides everything, this only controls in-app intent.
+ */
+model NotificationPreference {
+  userId           String               @db.Uuid
+  application      PushApplication
+  category         NotificationCategory
+  pushEnabled      Boolean              @default(true)
+  soundEnabled     Boolean              @default(true)
+  vibrationEnabled Boolean              @default(true)
+  updatedAt        DateTime             @updatedAt @db.Timestamptz(3)
+  user             User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, application, category])
+  @@map("notification_preferences")
+}
+
+/**
+ * One row per user: how much a sensitive notification's title/body may
+ * reveal on a locked device. Separate from NotificationPreference (which
+ * is per category) since preview mode is a single cross-category privacy
+ * dial, not an on/off switch per event type.
+ */
+model NotificationPrivacySetting {
+  userId      String                  @id @db.Uuid
+  previewMode NotificationPreviewMode @default(GENERIC)
+  updatedAt   DateTime                @updatedAt @db.Timestamptz(3)
+  user        User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_privacy_settings")
 }

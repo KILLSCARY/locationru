@@ -488,3 +488,229 @@ export interface RealtimeEventPayloads {
 export type RealtimeEventByName<TName extends RealtimeEventName> = z.infer<
   (typeof RealtimeEventSchemas)[TName]
 >;
+
+// ---------------------------------------------------------------------------
+// Push notifications (Task 28). Push is never the source of truth: opening a
+// notification always re-syncs from REST/WebSocket. The two payload shapes
+// below are deliberately different —
+//   - PushNotificationPayloadSchema is the full manifest (includes the
+//     display copy: title/body) used server-side and for the in-app inbox.
+//   - PushDataPayloadSchema is what actually rides in the native push
+//     message's data block. `.strict()` makes it a hard runtime boundary: an
+//     access/refresh token, OTP, phone number, or any other field not listed
+//     here fails validation rather than silently being allowed through.
+// ---------------------------------------------------------------------------
+
+export const NotificationTypeSchema = z.enum([
+  'DRIVER_NEW_TRIP_AVAILABLE',
+  'DRIVER_BID_ACCEPTED',
+  'DRIVER_BID_REJECTED',
+  'DRIVER_TRIP_CANCELLED',
+  'DRIVER_PAYMENT_RESERVED',
+  'DRIVER_PICKUP_REMINDER',
+  'DRIVER_LOCATION_DEGRADED',
+  'DRIVER_DOCUMENT_EXPIRING',
+  'DRIVER_ACCOUNT_APPROVED',
+  'DRIVER_ACCOUNT_REJECTED',
+  'DRIVER_PAYOUT_COMPLETED',
+  'DRIVER_PAYOUT_FAILED',
+  'PASSENGER_BID_RECEIVED',
+  'PASSENGER_DRIVER_SELECTED',
+  'PASSENGER_DRIVER_EN_ROUTE',
+  'PASSENGER_DRIVER_ARRIVED',
+  'PASSENGER_TRIP_STARTED',
+  'PASSENGER_TRIP_COMPLETED',
+  'PASSENGER_TRIP_CANCELLED',
+  'PASSENGER_PAYMENT_RESERVED',
+  'PASSENGER_PAYMENT_FAILED',
+  'PASSENGER_REFUND_COMPLETED',
+  'SECURITY_SESSION_REVOKED',
+  'SYSTEM_SERVICE_NOTICE',
+]);
+export type NotificationType = z.infer<typeof NotificationTypeSchema>;
+
+export const NotificationCategorySchema = z.enum([
+  'TRIP_OFFERS',
+  'ACTIVE_TRIP',
+  'PAYMENTS',
+  'DRIVER_OPERATIONS',
+  'ACCOUNT',
+  'SECURITY',
+]);
+export type NotificationCategory = z.infer<typeof NotificationCategorySchema>;
+
+export const NotificationPrioritySchema = z.enum([
+  'NORMAL',
+  'HIGH',
+  'CRITICAL',
+]);
+export type NotificationPriority = z.infer<typeof NotificationPrioritySchema>;
+
+export const NotificationStatusSchema = z.enum([
+  'PENDING',
+  'QUEUED',
+  'SENT',
+  'PARTIALLY_SENT',
+  'FAILED',
+  'CANCELLED',
+  'EXPIRED',
+]);
+export type NotificationStatus = z.infer<typeof NotificationStatusSchema>;
+
+export const NotificationDeliveryStatusSchema = z.enum([
+  'QUEUED',
+  'SENT',
+  'PROVIDER_ACCEPTED',
+  'DELIVERED',
+  'OPENED',
+  'RETRY_SCHEDULED',
+  'FAILED_TEMPORARY',
+  'FAILED_PERMANENT',
+  'TOKEN_INVALID',
+]);
+export type NotificationDeliveryStatus = z.infer<
+  typeof NotificationDeliveryStatusSchema
+>;
+
+export const PushPlatformSchema = z.enum(['ANDROID', 'IOS']);
+export type PushPlatform = z.infer<typeof PushPlatformSchema>;
+
+export const PushApplicationSchema = z.enum(['PASSENGER', 'DRIVER']);
+export type PushApplication = z.infer<typeof PushApplicationSchema>;
+
+export const PushProviderTypeSchema = z.enum([
+  'DEVELOPMENT',
+  'STAGING',
+  'FCM',
+  'APNS',
+]);
+export type PushProviderType = z.infer<typeof PushProviderTypeSchema>;
+
+export const PushEnvironmentSchema = z.enum([
+  'DEVELOPMENT',
+  'STAGING',
+  'PRODUCTION',
+]);
+export type PushEnvironment = z.infer<typeof PushEnvironmentSchema>;
+
+export const NotificationPreviewModeSchema = z.enum([
+  'FULL',
+  'GENERIC',
+  'HIDDEN',
+]);
+export type NotificationPreviewMode = z.infer<
+  typeof NotificationPreviewModeSchema
+>;
+
+/** The full notification manifest — server-side record and in-app inbox item shape. Never rendered verbatim on a locked screen; see NotificationPreviewMode. */
+export const PushNotificationPayloadSchema = z.object({
+  notificationId: z.string().uuid(),
+  type: NotificationTypeSchema,
+  entityType: z.string().min(1).max(32),
+  entityId: z.string().uuid().nullable(),
+  occurredAt: z.string().datetime({ offset: true }),
+  sequence: z.number().int().nonnegative(),
+  deepLink: z.string().max(512).nullable(),
+  title: z.string().min(1).max(128),
+  body: z.string().min(1).max(512),
+  dataVersion: z.number().int().positive(),
+});
+export type PushNotificationPayload = z.infer<
+  typeof PushNotificationPayloadSchema
+>;
+
+/**
+ * The actual `data` block of a native push message — deliberately narrow.
+ * `.strict()` rejects any key not listed here, so a token/OTP/phone number/
+ * address ending up in a push payload is a validation failure, not a review
+ * miss. The client re-fetches everything else from REST/WebSocket after
+ * opening the notification.
+ */
+export const PushDataPayloadSchema = z
+  .object({
+    notificationId: z.string().uuid(),
+    type: NotificationTypeSchema,
+    tripId: z.string().uuid().optional(),
+    bidId: z.string().uuid().nullable().optional(),
+    paymentId: z.string().uuid().nullable().optional(),
+    sequence: z.number().int().nonnegative(),
+    deepLink: z.string().max(512).optional(),
+    occurredAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+export type PushDataPayload = z.infer<typeof PushDataPayloadSchema>;
+
+export const RegisterDeviceRequestSchema = z.object({
+  deviceId: z.string().min(1).max(255),
+  deviceSessionId: z.string().uuid(),
+  application: PushApplicationSchema,
+  platform: PushPlatformSchema,
+  provider: PushProviderTypeSchema,
+  pushToken: z.string().min(1).max(4_096),
+  appVersion: z.string().max(32).optional(),
+  osVersion: z.string().max(32).optional(),
+  locale: z.string().max(16).optional(),
+  notificationsPermission: z.boolean(),
+});
+export type RegisterDeviceRequest = z.infer<typeof RegisterDeviceRequestSchema>;
+
+export const RegisterDeviceResponseSchema = z.object({
+  registrationId: z.string().uuid(),
+  status: z.enum(['ACTIVE', 'INVALID', 'REVOKED', 'EXPIRED']),
+  registeredAt: z.string().datetime({ offset: true }),
+});
+export type RegisterDeviceResponse = z.infer<
+  typeof RegisterDeviceResponseSchema
+>;
+
+export const NotificationPreferenceEntrySchema = z.object({
+  category: NotificationCategorySchema,
+  pushEnabled: z.boolean(),
+  soundEnabled: z.boolean(),
+  vibrationEnabled: z.boolean(),
+});
+export type NotificationPreferenceEntry = z.infer<
+  typeof NotificationPreferenceEntrySchema
+>;
+
+export const NotificationPreferencesResponseSchema = z.object({
+  categories: z.array(NotificationPreferenceEntrySchema),
+  previewMode: NotificationPreviewModeSchema,
+});
+export type NotificationPreferencesResponse = z.infer<
+  typeof NotificationPreferencesResponseSchema
+>;
+
+export const UpdateNotificationPreferencesRequestSchema = z.object({
+  categories: z.array(
+    NotificationPreferenceEntrySchema.partial().extend({
+      category: NotificationCategorySchema,
+    }),
+  ),
+  previewMode: NotificationPreviewModeSchema.optional(),
+});
+export type UpdateNotificationPreferencesRequest = z.infer<
+  typeof UpdateNotificationPreferencesRequestSchema
+>;
+
+export const NotificationInboxItemSchema = z.object({
+  id: z.string().uuid(),
+  type: NotificationTypeSchema,
+  title: z.string().max(128),
+  body: z.string().max(512),
+  createdAt: z.string().datetime({ offset: true }),
+  readAt: z.string().datetime({ offset: true }).nullable(),
+  openedAt: z.string().datetime({ offset: true }).nullable(),
+  entityType: z.string().max(32),
+  entityId: z.string().uuid().nullable(),
+  deepLink: z.string().max(512).nullable(),
+});
+export type NotificationInboxItem = z.infer<typeof NotificationInboxItemSchema>;
+
+export const NotificationInboxResponseSchema = z.object({
+  items: z.array(NotificationInboxItemSchema),
+  nextCursor: z.string().nullable(),
+});
+export type NotificationInboxResponse = z.infer<
+  typeof NotificationInboxResponseSchema
+>;
