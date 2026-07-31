@@ -12,6 +12,11 @@ import { stagingOtpLookupKey } from '../auth/providers/staging-sms.provider.js';
 import { PrismaService } from '../database/prisma.service.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { RealtimeOutboxStatus } from '../generated/prisma/enums.js';
+import type { PushApplication } from '../generated/prisma/enums.js';
+import { NotificationOutboxService } from '../notifications/notification-outbox.service.js';
+import { NotificationOutboxWorker } from '../notifications/notification-outbox.worker.js';
+import { NotificationService } from '../notifications/notification.service.js';
+import { DevicePushTokenRepository } from '../notifications/repositories/device-push-token.repository.js';
 import {
   PAYMENT_PROVIDER,
   type PaymentProvider,
@@ -37,6 +42,10 @@ export class StagingToolsService {
     @Inject(PAYMENT_PROVIDER) private readonly paymentProvider: PaymentProvider,
     private readonly paymentService: PaymentService,
     private readonly outbox: RealtimeOutboxService,
+    private readonly notifications: NotificationService,
+    private readonly notificationOutbox: NotificationOutboxService,
+    private readonly pushOutboxWorker: NotificationOutboxWorker,
+    private readonly devicePushTokens: DevicePushTokenRepository,
   ) {}
 
   async viewOtp(adminId: string, rawPhone: string) {
@@ -173,6 +182,93 @@ export class StagingToolsService {
       'staging.outbox.retried',
       'RealtimeOutboxEvent',
       eventId,
+      {},
+    );
+  }
+
+  /**
+   * Sends a real end-to-end SYSTEM_SERVICE_NOTICE push through the actual
+   * pipeline (NotificationService -> NotificationOutboxService ->
+   * NotificationOutboxWorker), then drives the worker's poll immediately so
+   * staging QA gets synchronous feedback instead of waiting for the next
+   * poll tick. Uses a fixed generic-copy type deliberately — this tool is
+   * for verifying provider wiring/token delivery, not for authoring
+   * arbitrary push content.
+   */
+  async testSendPush(
+    adminId: string,
+    userId: string,
+    application: PushApplication,
+  ) {
+    const entityId = randomUUID();
+    const draft = this.notifications.createDraft({
+      userId,
+      type: 'SYSTEM_SERVICE_NOTICE',
+      application,
+      entityType: 'SYSTEM',
+      entityId,
+      idempotencyKey: randomUUID(),
+    });
+    await this.notificationOutbox.enqueue(this.prisma, draft);
+    await this.pushOutboxWorker.processPending();
+
+    const outboxEvent = await this.prisma.notificationOutboxEvent.findUnique({
+      where: { deduplicationKey: draft.deduplicationKey },
+    });
+    const notification = await this.prisma.notification.findUnique({
+      where: { deduplicationKey: draft.deduplicationKey },
+    });
+
+    await this.audit(adminId, 'staging.push.test_sent', 'User', userId, {
+      application,
+      outboxStatus: outboxEvent?.status ?? null,
+      notificationStatus: notification?.status ?? null,
+    });
+
+    return {
+      outboxEventId: outboxEvent?.id ?? null,
+      outboxStatus: outboxEvent?.status ?? null,
+      notificationId: notification?.id ?? null,
+      notificationStatus: notification?.status ?? null,
+    };
+  }
+
+  /** Every status (not just ACTIVE), for staging debugging — never returns encryptedToken/tokenHash. */
+  async listPushTokens(userId: string) {
+    const rows = await this.prisma.devicePushToken.findMany({
+      where: { userId },
+      orderBy: { lastRegisteredAt: 'desc' },
+      select: {
+        id: true,
+        application: true,
+        platform: true,
+        provider: true,
+        environment: true,
+        status: true,
+        notificationsPermission: true,
+        lastRegisteredAt: true,
+        lastUsedAt: true,
+        invalidatedAt: true,
+        invalidationReason: true,
+      },
+    });
+    return rows;
+  }
+
+  /** Simulates the provider reporting a token as permanently invalid, to test the app's re-registration flow after invalidation. */
+  async simulateInvalidPushToken(
+    adminId: string,
+    devicePushTokenId: string,
+  ): Promise<void> {
+    await this.devicePushTokens.markInvalid(
+      devicePushTokenId,
+      'STAGING_SIMULATED_INVALID',
+    );
+    await this.audit(
+      adminId,
+      'staging.push.token_invalidated',
+      'DevicePushToken',
+      devicePushTokenId,
       {},
     );
   }

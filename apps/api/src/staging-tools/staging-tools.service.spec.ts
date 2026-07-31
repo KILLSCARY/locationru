@@ -2,12 +2,22 @@ import { jest } from '@jest/globals';
 import { NotFoundException } from '@nestjs/common';
 
 import { PhoneNormalizer } from '../auth/phone-normalizer.service.js';
+import { NotificationOutboxService } from '../notifications/notification-outbox.service.js';
+import { NotificationOutboxWorker } from '../notifications/notification-outbox.worker.js';
+import { NotificationService } from '../notifications/notification.service.js';
+import { DevicePushTokenRepository } from '../notifications/repositories/device-push-token.repository.js';
 import { PaymentService } from '../payments/payment.service.js';
 import { RealtimeOutboxService } from '../realtime/realtime-outbox.service.js';
 import { RedisService } from '../redis/redis.service.js';
 import { StagingToolsService } from './staging-tools.service.js';
 
-function makeService() {
+function makeService(overrides?: {
+  notifications?: Partial<NotificationService>;
+  notificationOutbox?: Partial<NotificationOutboxService>;
+  pushOutboxWorker?: Partial<NotificationOutboxWorker>;
+  devicePushTokens?: Partial<DevicePushTokenRepository>;
+  extraPrisma?: Record<string, unknown>;
+}) {
   const prisma = {
     driverLocation: {
       findFirst: jest.fn(),
@@ -15,6 +25,7 @@ function makeService() {
     },
     adminAuditLog: { create: jest.fn().mockResolvedValue(undefined) },
     $queryRawUnsafe: jest.fn(),
+    ...overrides?.extraPrisma,
   };
   const service = new StagingToolsService(
     prisma as never,
@@ -23,6 +34,10 @@ function makeService() {
     { name: 'staging' } as never,
     {} as PaymentService,
     {} as RealtimeOutboxService,
+    (overrides?.notifications ?? {}) as NotificationService,
+    (overrides?.notificationOutbox ?? {}) as NotificationOutboxService,
+    (overrides?.pushOutboxWorker ?? {}) as NotificationOutboxWorker,
+    (overrides?.devicePushTokens ?? {}) as DevicePushTokenRepository,
   );
   return { service, prisma };
 }
@@ -86,6 +101,105 @@ describe('StagingToolsService location tools', () => {
       await expect(
         service.emulateGpsJump('admin-1', 'driver-1'),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+});
+
+describe('StagingToolsService push tools', () => {
+  describe('testSendPush', () => {
+    it('builds a draft, enqueues it, drives the worker, and reports the resulting status', async () => {
+      const createDraft = jest.fn().mockReturnValue({
+        deduplicationKey: 'dedup-1',
+      });
+      const enqueue = jest.fn().mockResolvedValue(undefined);
+      const processPending = jest.fn().mockResolvedValue(undefined);
+      const { service, prisma } = makeService({
+        notifications: { createDraft } as never,
+        notificationOutbox: { enqueue } as never,
+        pushOutboxWorker: { processPending } as never,
+        extraPrisma: {
+          notificationOutboxEvent: {
+            findUnique: jest
+              .fn()
+              .mockResolvedValue({ id: 'event-1', status: 'DELIVERED' }),
+          },
+          notification: {
+            findUnique: jest
+              .fn()
+              .mockResolvedValue({ id: 'notif-1', status: 'SENT' }),
+          },
+        },
+      });
+
+      const result = await service.testSendPush('admin-1', 'user-1', 'DRIVER');
+
+      expect(createDraft).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-1', application: 'DRIVER' }),
+      );
+      expect(enqueue).toHaveBeenCalledWith(
+        prisma,
+        expect.objectContaining({ deduplicationKey: 'dedup-1' }),
+      );
+      expect(processPending).toHaveBeenCalled();
+      expect(result).toEqual({
+        outboxEventId: 'event-1',
+        outboxStatus: 'DELIVERED',
+        notificationId: 'notif-1',
+        notificationStatus: 'SENT',
+      });
+      expect(prisma.adminAuditLog.create).toHaveBeenCalled();
+    });
+  });
+
+  describe('listPushTokens', () => {
+    it('returns token rows without the encrypted token or hash', async () => {
+      const findMany = jest.fn().mockResolvedValue([
+        {
+          id: 'token-1',
+          application: 'DRIVER',
+          platform: 'ANDROID',
+          provider: 'FCM',
+          environment: 'STAGING',
+          status: 'ACTIVE',
+          notificationsPermission: true,
+          lastRegisteredAt: new Date(),
+          lastUsedAt: null,
+          invalidatedAt: null,
+          invalidationReason: null,
+        },
+      ]);
+      const { service } = makeService({
+        extraPrisma: { devicePushToken: { findMany } },
+      });
+
+      const rows = await service.listPushTokens('user-1');
+
+      expect(rows).toHaveLength(1);
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { userId: 'user-1' } }),
+      );
+      const selectArg = (
+        findMany.mock.calls[0]![0] as { select: Record<string, boolean> }
+      ).select;
+      expect(selectArg).not.toHaveProperty('encryptedToken');
+      expect(selectArg).not.toHaveProperty('tokenHash');
+    });
+  });
+
+  describe('simulateInvalidPushToken', () => {
+    it('marks the token invalid and logs an audit entry', async () => {
+      const markInvalid = jest.fn().mockResolvedValue(undefined);
+      const { service, prisma } = makeService({
+        devicePushTokens: { markInvalid } as never,
+      });
+
+      await service.simulateInvalidPushToken('admin-1', 'token-1');
+
+      expect(markInvalid).toHaveBeenCalledWith(
+        'token-1',
+        'STAGING_SIMULATED_INVALID',
+      );
+      expect(prisma.adminAuditLog.create).toHaveBeenCalled();
     });
   });
 });

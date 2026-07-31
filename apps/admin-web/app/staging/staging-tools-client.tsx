@@ -223,6 +223,75 @@ export function DriverLocationTools() {
   );
 }
 
+export function PushTestTools() {
+  const [userId, setUserId] = useState('');
+  const [application, setApplication] = useState<'PASSENGER' | 'DRIVER'>(
+    'DRIVER',
+  );
+  const [tokenId, setTokenId] = useState('');
+  const [result, setResult] = useState<unknown>();
+
+  const send = async () => {
+    const { data } = await call('POST', 'staging/push/test-send', {
+      userId,
+      application,
+    });
+    setResult(data);
+  };
+  const loadTokens = async () => {
+    const { data } = await call(
+      'GET',
+      `staging/push/tokens/${encodeURIComponent(userId)}`,
+    );
+    setResult(data);
+  };
+  const simulateInvalid = async () => {
+    const { data } = await call(
+      'POST',
+      `staging/push/tokens/${tokenId}/simulate-invalid`,
+    );
+    setResult(data);
+  };
+
+  return (
+    <div>
+      <div className="toolbar">
+        <input
+          placeholder="ID пользователя"
+          value={userId}
+          onChange={(event) => setUserId(event.target.value)}
+        />
+        <select
+          value={application}
+          onChange={(event) =>
+            setApplication(event.target.value as 'PASSENGER' | 'DRIVER')
+          }
+        >
+          <option value="DRIVER">DRIVER</option>
+          <option value="PASSENGER">PASSENGER</option>
+        </select>
+        <button type="button" onClick={send} disabled={!userId}>
+          Отправить тестовый push
+        </button>
+        <button type="button" onClick={loadTokens} disabled={!userId}>
+          Показать токены устройств
+        </button>
+      </div>
+      <div className="toolbar">
+        <input
+          placeholder="ID токена устройства"
+          value={tokenId}
+          onChange={(event) => setTokenId(event.target.value)}
+        />
+        <button type="button" onClick={simulateInvalid} disabled={!tokenId}>
+          Смоделировать невалидный токен
+        </button>
+      </div>
+      <ResultPanel result={result} />
+    </div>
+  );
+}
+
 export function ResetTestDataButton() {
   const [result, setResult] = useState<unknown>();
   const reset = async () => {

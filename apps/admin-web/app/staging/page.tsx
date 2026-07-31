@@ -7,6 +7,7 @@ import {
   OtpViewer,
   OutboxViewer,
   PaymentScenarioPicker,
+  PushTestTools,
   ResetTestDataButton,
   WebhookSimulator,
 } from './staging-tools-client';
@@ -68,6 +69,16 @@ export default async function StagingToolsPage() {
       <section>
         <h2>Координаты водителя</h2>
         <DriverLocationTools />
+      </section>
+
+      <section>
+        <h2>Push-уведомления: тестовая отправка</h2>
+        <p className="muted">
+          Отправляет реальный SYSTEM_SERVICE_NOTICE push через настоящий
+          пайплайн (outbox → провайдер) и сразу прогоняет worker, чтобы
+          результат был виден без ожидания следующего опроса.
+        </p>
+        <PushTestTools />
       </section>
 
       <section>

@@ -18,6 +18,7 @@ import { RolesGuard } from '../auth/guards/roles.guard.js';
 import type { AuthenticatedUser } from '../auth/auth.types.js';
 import { SetPaymentScenarioDto } from './dto/set-payment-scenario.dto.js';
 import { SimulateWebhookDto } from './dto/simulate-webhook.dto.js';
+import { TestSendPushDto } from './dto/test-send-push.dto.js';
 import { StagingOnlyGuard } from './staging-only.guard.js';
 import { StagingToolsService } from './staging-tools.service.js';
 
@@ -109,5 +110,30 @@ export class StagingToolsController {
     @Param('driverId') driverId: string,
   ) {
     return this.stagingTools.emulateGpsJump(admin.id, driverId);
+  }
+
+  @Post('push/test-send')
+  testSendPush(
+    @CurrentUser() admin: AuthenticatedUser,
+    @Body() body: TestSendPushDto,
+  ) {
+    return this.stagingTools.testSendPush(
+      admin.id,
+      body.userId,
+      body.application,
+    );
+  }
+
+  @Get('push/tokens/:userId')
+  listPushTokens(@Param('userId') userId: string) {
+    return this.stagingTools.listPushTokens(userId);
+  }
+
+  @Post('push/tokens/:tokenId/simulate-invalid')
+  simulateInvalidPushToken(
+    @CurrentUser() admin: AuthenticatedUser,
+    @Param('tokenId') tokenId: string,
+  ) {
+    return this.stagingTools.simulateInvalidPushToken(admin.id, tokenId);
   }
 }
