@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { App } from 'firebase-admin/app';
 import { cert, deleteApp, initializeApp } from 'firebase-admin/app';
@@ -53,7 +53,7 @@ export class FirebasePushProvider implements PushProvider, OnModuleDestroy {
   constructor(
     private readonly config: ConfigService,
     /** Test-only seam — production code always leaves this undefined and gets a lazily-initialized real client via getApp(). */
-    overrides?: { messaging?: Messaging },
+    @Optional() overrides?: { messaging?: Messaging },
   ) {
     this.circuit = new CircuitBreaker({
       failureThreshold: 5,

@@ -11,6 +11,7 @@ import { FinanceModule } from './finance/finance.module.js';
 import { HealthModule } from './health/health.module.js';
 import { LifecycleModule } from './lifecycle/lifecycle.module.js';
 import { MapsModule } from './maps/maps.module.js';
+import { NotificationsModule } from './notifications/notifications.module.js';
 import { ObservabilityModule } from './observability/observability.module.js';
 import { PaymentsModule } from './payments/payments.module.js';
 import { RedisModule } from './redis/redis.module.js';
@@ -41,6 +42,7 @@ import { SmsWebhookModule } from './webhooks/sms-webhook.module.js';
     StorageModule,
     StagingToolsModule,
     SmsWebhookModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}
