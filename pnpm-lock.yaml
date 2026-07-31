@@ -93,6 +93,9 @@ importers:
       '@resilient-taxi/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@resilient-taxi/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       class-transformer:
         specifier: 0.5.1
         version: 0.5.1

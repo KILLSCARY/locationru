@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { PrismaService } from '../database/prisma.service.js';
+import { NotificationOutboxWorker } from '../notifications/notification-outbox.worker.js';
 import { RealtimeOutboxService } from '../realtime/realtime-outbox.service.js';
 import { RedisService } from '../redis/redis.service.js';
 import { OBJECT_STORAGE_PROVIDER } from '../storage/object-storage-provider.interface.js';
@@ -20,6 +21,7 @@ export interface ReadinessResponse {
     redis: DependencyStatus;
     migrations: DependencyStatus;
     outboxWorker: DependencyStatus;
+    pushOutboxWorker: DependencyStatus;
     objectStorage: DependencyStatus;
     config: DependencyStatus;
   };
@@ -43,6 +45,7 @@ export class HealthService {
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly outbox: RealtimeOutboxService,
+    private readonly pushOutbox: NotificationOutboxWorker,
     @Inject(OBJECT_STORAGE_PROVIDER)
     private readonly objectStorage: ObjectStorageProvider,
   ) {}
@@ -79,29 +82,42 @@ export class HealthService {
    * to every readiness probe for no operational benefit.
    */
   async getDetailedStatus(): Promise<DetailedStatusResponse> {
-    const [postgres, redis, migrations, outboxWorker, objectStorage, config] =
-      await Promise.all([
-        this.timed(() => this.prisma.checkConnection()),
-        this.timed(() => this.redis.checkConnection()),
-        this.timed(async () => {
-          const applied = await this.prisma.checkMigrationsApplied();
-          if (!applied)
-            throw new Error('One or more migrations did not finish cleanly');
-        }),
-        this.timed(async () => {
-          if (!this.outbox.isRunning()) {
-            throw new Error('Outbox poll worker is not running');
-          }
-        }),
-        this.timed(() => this.checkObjectStorage()),
-        this.timed(() => this.checkConfig()),
-      ]);
+    const [
+      postgres,
+      redis,
+      migrations,
+      outboxWorker,
+      pushOutboxWorker,
+      objectStorage,
+      config,
+    ] = await Promise.all([
+      this.timed(() => this.prisma.checkConnection()),
+      this.timed(() => this.redis.checkConnection()),
+      this.timed(async () => {
+        const applied = await this.prisma.checkMigrationsApplied();
+        if (!applied)
+          throw new Error('One or more migrations did not finish cleanly');
+      }),
+      this.timed(async () => {
+        if (!this.outbox.isRunning()) {
+          throw new Error('Outbox poll worker is not running');
+        }
+      }),
+      this.timed(async () => {
+        if (!this.pushOutbox.isRunning()) {
+          throw new Error('Push outbox poll worker is not running');
+        }
+      }),
+      this.timed(() => this.checkObjectStorage()),
+      this.timed(() => this.checkConfig()),
+    ]);
 
     const checks = {
       postgres,
       redis,
       migrations,
       outboxWorker,
+      pushOutboxWorker,
       objectStorage,
       config,
     };
