@@ -21,6 +21,7 @@ describe('ApnsPushProvider', () => {
       data: {},
       priority: 'HIGH',
       ttlSeconds: 300,
+      category: 'ACTIVE_TRIP' as never,
     });
 
     expect(result).toEqual({

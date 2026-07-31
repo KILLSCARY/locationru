@@ -10,7 +10,10 @@ import {
 } from 'firebase-admin/messaging';
 
 import { CircuitBreaker } from '../../maps/providers/circuit-breaker.js';
-import { PushProviderType } from '../../generated/prisma/enums.js';
+import {
+  type NotificationCategory,
+  PushProviderType,
+} from '../../generated/prisma/enums.js';
 import type {
   PushHealthCheckResult,
   PushProvider,
@@ -22,6 +25,16 @@ import type {
 import { PushProviderError } from './push-provider.errors.js';
 
 const FCM_MAX_TOKENS_PER_CALL = 500;
+
+/** Must stay in sync with the channel ids the driver-android/passenger-mobile clients register — see docs/notifications/architecture.md. */
+const ANDROID_CHANNEL_BY_CATEGORY: Record<NotificationCategory, string> = {
+  TRIP_OFFERS: 'trip_offers',
+  ACTIVE_TRIP: 'active_trip',
+  PAYMENTS: 'payments',
+  DRIVER_OPERATIONS: 'driver_operations',
+  ACCOUNT: 'account',
+  SECURITY: 'security',
+};
 
 /** FCM error codes that mean the token itself will never work again. */
 const PERMANENT_TOKEN_ERROR_CODES = new Set([
@@ -183,6 +196,7 @@ export class FirebasePushProvider implements PushProvider, OnModuleDestroy {
     priority: 'NORMAL' | 'HIGH';
     ttlSeconds: number;
     collapseKey?: string;
+    category: NotificationCategory;
   }): Pick<Message, 'android' | 'apns'> {
     const androidPriority = input.priority === 'HIGH' ? 'high' : 'normal';
     const apnsPriority = input.priority === 'HIGH' ? '10' : '5';
@@ -194,6 +208,9 @@ export class FirebasePushProvider implements PushProvider, OnModuleDestroy {
         priority: androidPriority,
         ttl: input.ttlSeconds * 1_000,
         ...(input.collapseKey ? { collapseKey: input.collapseKey } : {}),
+        notification: {
+          channelId: ANDROID_CHANNEL_BY_CATEGORY[input.category],
+        },
       },
       apns: {
         headers: {

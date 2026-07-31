@@ -32,6 +32,7 @@ describe('FirebasePushProvider', () => {
       data: { tripId: 'trip-1' },
       priority: 'HIGH',
       ttlSeconds: 30,
+      category: 'TRIP_OFFERS' as never,
     });
 
     expect(result).toEqual({
@@ -39,6 +40,34 @@ describe('FirebasePushProvider', () => {
       providerMessageId: 'projects/x/messages/1',
     });
     expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('sets the Android notification channel id from the category', async () => {
+    const send = jest
+      .fn<() => Promise<string>>()
+      .mockResolvedValue('projects/x/messages/1');
+    const provider = new FirebasePushProvider(config(), {
+      messaging: { send } as never,
+    });
+
+    await provider.sendToDevice({
+      rawToken: 'a'.repeat(64),
+      platform: 'ANDROID' as never,
+      title: 't',
+      body: 'b',
+      data: {},
+      priority: 'HIGH',
+      ttlSeconds: 30,
+      category: 'ACTIVE_TRIP' as never,
+    });
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        android: expect.objectContaining({
+          notification: { channelId: 'active_trip' },
+        }),
+      }),
+    );
   });
 
   it('classifies an invalid-registration-token error as TOKEN_INVALID', async () => {
@@ -59,6 +88,7 @@ describe('FirebasePushProvider', () => {
       data: {},
       priority: 'NORMAL',
       ttlSeconds: 30,
+      category: 'TRIP_OFFERS' as never,
     });
 
     expect(result.status).toBe('TOKEN_INVALID');
@@ -82,6 +112,7 @@ describe('FirebasePushProvider', () => {
       data: {},
       priority: 'NORMAL',
       ttlSeconds: 30,
+      category: 'TRIP_OFFERS' as never,
     });
 
     expect(result.status).toBe('FAILED_TEMPORARY');
@@ -121,6 +152,7 @@ describe('FirebasePushProvider', () => {
       data: {},
       priority: 'HIGH',
       ttlSeconds: 30,
+      category: 'TRIP_OFFERS' as never,
     });
 
     expect(result.results).toEqual([
@@ -165,6 +197,7 @@ describe('FirebasePushProvider', () => {
       data: {},
       priority: 'NORMAL',
       ttlSeconds: 30,
+      category: 'TRIP_OFFERS' as never,
     });
 
     expect(sendEachForMulticast).toHaveBeenCalledTimes(2);
@@ -206,6 +239,7 @@ describe('FirebasePushProvider', () => {
       data: {},
       priority: 'NORMAL',
       ttlSeconds: 30,
+      category: 'TRIP_OFFERS' as never,
     });
 
     expect(JSON.stringify(result)).not.toContain(rawToken);

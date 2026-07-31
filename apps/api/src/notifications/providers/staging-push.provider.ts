@@ -57,6 +57,7 @@ export class StagingPushProvider implements PushProvider {
           data: input.data,
           priority: input.priority,
           ttlSeconds: input.ttlSeconds,
+          category: input.category,
           ...(input.collapseKey ? { collapseKey: input.collapseKey } : {}),
         });
         return { ...result, devicePushTokenId: target.devicePushTokenId };

@@ -1,4 +1,5 @@
 import type {
+  NotificationCategory,
   PushPlatform,
   PushProviderType,
 } from '../../generated/prisma/enums.js';
@@ -32,6 +33,8 @@ export interface SendToDeviceInput {
   priority: 'NORMAL' | 'HIGH';
   ttlSeconds: number;
   collapseKey?: string;
+  /** Drives the Android notification channel (FirebasePushProvider only) — has no APNs equivalent. */
+  category: NotificationCategory;
 }
 
 export interface DeviceSendTarget {
@@ -48,6 +51,8 @@ export interface SendToDevicesInput {
   priority: 'NORMAL' | 'HIGH';
   ttlSeconds: number;
   collapseKey?: string;
+  /** Drives the Android notification channel (FirebasePushProvider only) — has no APNs equivalent. */
+  category: NotificationCategory;
 }
 
 export type SendOutcomeStatus =

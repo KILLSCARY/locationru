@@ -226,6 +226,7 @@ export class NotificationOutboxWorker implements OnModuleInit, OnModuleDestroy {
     event: OutboxEventRow,
   ): Promise<{ outcome: 'DELIVERED' | string; notificationId: string }> {
     const payload = event.payload as unknown as OutboxPayload;
+    const category = this.templates.categoryFor(event.type);
 
     const notification = await this.upsertNotification(event, payload);
 
@@ -290,6 +291,7 @@ export class NotificationOutboxWorker implements OnModuleInit, OnModuleDestroy {
           1,
           Math.round((event.expiresAt!.getTime() - Date.now()) / 1_000),
         ),
+        category,
       });
       this.metrics.setGauge(
         'push_provider_latency_ms',

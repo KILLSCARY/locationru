@@ -23,6 +23,7 @@ describe('DevelopmentPushProvider', () => {
       data: { tripId: 'trip-1' },
       priority: 'HIGH',
       ttlSeconds: 30,
+      category: 'TRIP_OFFERS' as never,
     });
 
     expect(result.status).toBe('ACCEPTED');
@@ -53,6 +54,7 @@ describe('DevelopmentPushProvider', () => {
       data: {},
       priority: 'NORMAL',
       ttlSeconds: 300,
+      category: 'TRIP_OFFERS' as never,
     });
 
     expect(result.results.map((entry) => entry.devicePushTokenId)).toEqual([

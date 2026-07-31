@@ -45,6 +45,7 @@ describe('StagingPushProvider', () => {
       data: { tripId: 'trip-1' },
       priority: 'HIGH',
       ttlSeconds: 30,
+      category: 'TRIP_OFFERS' as never,
     });
 
     expect(result.results[0]!.status).toBe('ACCEPTED');
@@ -72,6 +73,7 @@ describe('StagingPushProvider', () => {
       data: { secret: 'leak' },
       priority: 'NORMAL',
       ttlSeconds: 30,
+      category: 'TRIP_OFFERS' as never,
     });
 
     for (const call of logSpy.mock.calls) {
