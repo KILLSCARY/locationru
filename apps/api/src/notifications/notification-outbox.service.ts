@@ -6,6 +6,7 @@ import {
   NotificationOutboxStatus,
   type Prisma,
 } from '../generated/prisma/client.js';
+import { MetricsService } from '../observability/metrics.service.js';
 import type { NotificationDraft } from './notification.service.js';
 import { NotificationTemplateService } from './templates/notification-template.service.js';
 
@@ -44,6 +45,7 @@ export class NotificationOutboxService {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly templates: NotificationTemplateService,
+    private readonly metrics: MetricsService,
   ) {}
 
   async enqueue(client: OutboxClient, draft: NotificationDraft): Promise<void> {
@@ -123,6 +125,11 @@ export class NotificationOutboxService {
         expiresAt: new Date(Date.now() + draft.ttlSeconds * 1_000),
       },
     });
+    this.metrics.increment(
+      'notifications_queued_total',
+      'Outbox events newly queued for push delivery, by type/application',
+      { type: draft.type, application: draft.application },
+    );
   }
 
   /**

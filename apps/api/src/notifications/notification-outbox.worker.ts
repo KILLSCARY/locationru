@@ -112,6 +112,7 @@ export class NotificationOutboxWorker implements OnModuleInit, OnModuleDestroy {
 
   async processPending(): Promise<void> {
     const now = new Date();
+    await this.refreshGauges(now);
 
     // Crash recovery: a row stuck PROCESSING past its claim window is
     // presumed abandoned by whichever worker claimed it and made
@@ -392,6 +393,42 @@ export class NotificationOutboxWorker implements OnModuleInit, OnModuleDestroy {
         : 'no target accepted the push (invalid tokens or permanent failure)',
       notificationId: notification.id,
     };
+  }
+
+  /**
+   * Refreshes the two gauges that only make sense as a point-in-time
+   * snapshot rather than a per-event counter: how many device tokens are
+   * currently active (by application/platform) and how stale the oldest
+   * still-unprocessed PENDING row is. Run once per poll tick rather than
+   * per event, since both are cheap aggregate queries.
+   */
+  private async refreshGauges(now: Date): Promise<void> {
+    const oldestPending = await this.prisma.notificationOutboxEvent.findFirst({
+      where: { status: NotificationOutboxStatus.PENDING },
+      orderBy: { createdAt: 'asc' },
+    });
+    this.metrics.setGauge(
+      'notification_outbox_lag_seconds',
+      'Age in seconds of the oldest still-PENDING outbox event',
+      {},
+      oldestPending
+        ? Math.max(
+            0,
+            (now.getTime() - oldestPending.createdAt.getTime()) / 1_000,
+          )
+        : 0,
+    );
+
+    const activeCounts =
+      await this.devicePushTokens.countActiveByApplicationAndPlatform();
+    for (const { application, platform, count } of activeCounts) {
+      this.metrics.setGauge(
+        'active_push_tokens',
+        'Currently ACTIVE device push tokens by application/platform',
+        { application, platform },
+        count,
+      );
+    }
   }
 
   private async upsertNotification(

@@ -119,6 +119,23 @@ class FakePrisma {
       ),
     findUnique: async ({ where }: { where: { id: string } }) =>
       this.outboxRows.get(where.id) ?? null,
+    findFirst: async ({
+      where,
+      orderBy,
+    }: {
+      where: { status: string };
+      orderBy?: { createdAt: 'asc' | 'desc' };
+    }) => {
+      const matches = [...this.outboxRows.values()].filter(
+        (row) => row.status === where.status,
+      );
+      matches.sort((a, b) =>
+        orderBy?.createdAt === 'desc'
+          ? b.createdAt.getTime() - a.createdAt.getTime()
+          : a.createdAt.getTime() - b.createdAt.getTime(),
+      );
+      return matches[0] ?? null;
+    },
     updateMany: async ({
       where,
       data,
@@ -202,6 +219,11 @@ function buildWorker(overrides?: {
   }>;
   sendResults?: Array<{ status: string; devicePushTokenId: string }>;
   sendError?: Error;
+  activeTokenCounts?: Array<{
+    application: string;
+    platform: string;
+    count: number;
+  }>;
 }) {
   const config = new ConfigService({
     app: { environment: 'test' },
@@ -218,6 +240,8 @@ function buildWorker(overrides?: {
     markInvalid: async (id: string) => {
       markInvalidCalls.push(id);
     },
+    countActiveByApplicationAndPlatform: async () =>
+      overrides?.activeTokenCounts ?? [],
   };
   const sendToDevicesCalls: unknown[] = [];
   const providerResolver = {
@@ -245,7 +269,7 @@ function buildWorker(overrides?: {
     preferences as never,
     templates as never,
   );
-  return { worker, prisma, markInvalidCalls, sendToDevicesCalls };
+  return { worker, prisma, markInvalidCalls, sendToDevicesCalls, metrics };
 }
 
 describe('NotificationOutboxWorker', () => {
@@ -415,6 +439,27 @@ describe('NotificationOutboxWorker', () => {
     expect(prisma.notifications.size).toBe(1);
     const notification = [...prisma.notifications.values()][0]!;
     expect(notification.status).toBe('CANCELLED');
+  });
+
+  it('refreshes active_push_tokens and notification_outbox_lag_seconds gauges on every poll tick', async () => {
+    const { worker, prisma, metrics } = buildWorker({
+      activeTokenCounts: [
+        { application: 'DRIVER', platform: 'ANDROID', count: 7 },
+      ],
+    });
+    prisma.addOutboxRow({
+      createdAt: new Date(Date.now() - 5_000),
+      availableAt: new Date(Date.now() + 60_000),
+      status: 'PENDING',
+    });
+
+    await worker.processPending();
+
+    const text = metrics.renderPrometheusText();
+    expect(text).toContain(
+      'active_push_tokens{application="DRIVER",platform="ANDROID"} 7',
+    );
+    expect(text).toMatch(/notification_outbox_lag_seconds [1-9]\d*(\.\d+)?/);
   });
 
   it('reuses the existing Notification row when re-processing the same deduplicationKey', async () => {

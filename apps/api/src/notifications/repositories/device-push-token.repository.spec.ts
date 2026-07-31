@@ -120,6 +120,36 @@ class FakePrisma {
             where.lastRegisteredAt.gte.getTime(),
       ).length;
     },
+    groupBy: async ({
+      where,
+    }: {
+      by: ['application', 'platform'];
+      where: { status: string };
+    }) => {
+      const counts = new Map<
+        string,
+        { application: string; platform: string; count: number }
+      >();
+      for (const row of this.rows.values()) {
+        if (row.status !== where.status) continue;
+        const key = `${row.application}:${row.platform}`;
+        const existing = counts.get(key);
+        if (existing) {
+          existing.count += 1;
+        } else {
+          counts.set(key, {
+            application: row.application,
+            platform: row.platform,
+            count: 1,
+          });
+        }
+      }
+      return [...counts.values()].map((entry) => ({
+        application: entry.application,
+        platform: entry.platform,
+        _count: { _all: entry.count },
+      }));
+    },
   };
 
   async $transaction<T>(
@@ -321,5 +351,45 @@ describe('DevicePushTokenRepository', () => {
 
     expect(await repository.findByIdForUser(row.id, 'user-1')).not.toBeNull();
     expect(await repository.findByIdForUser(row.id, 'someone-else')).toBeNull();
+  });
+
+  it('countActiveByApplicationAndPlatform groups only ACTIVE rows', async () => {
+    const { repository } = buildRepository();
+    await repository.register(
+      registrationInput({
+        application: 'DRIVER' as never,
+        deviceId: 'd1',
+        rawToken: 'raw-push-token-d1',
+      }),
+    );
+    const second = await repository.register(
+      registrationInput({
+        application: 'DRIVER' as never,
+        deviceId: 'd2',
+        rawToken: 'raw-push-token-d2',
+      }),
+    );
+    await repository.register(
+      registrationInput({
+        application: 'PASSENGER' as never,
+        platform: 'IOS' as never,
+        deviceId: 'd3',
+        rawToken: 'raw-push-token-d3',
+      }),
+    );
+    await repository.markInvalid(second.id, 'PROVIDER_REPORTED_INVALID');
+
+    const counts = await repository.countActiveByApplicationAndPlatform();
+
+    expect(counts).toContainEqual({
+      application: 'DRIVER',
+      platform: 'ANDROID',
+      count: 1,
+    });
+    expect(counts).toContainEqual({
+      application: 'PASSENGER',
+      platform: 'IOS',
+      count: 1,
+    });
   });
 });

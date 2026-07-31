@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { NotificationOutboxService } from './notification-outbox.service.js';
 import type { NotificationDraft } from './notification.service.js';
+import { MetricsService } from '../observability/metrics.service.js';
 import { NotificationTemplateService } from './templates/notification-template.service.js';
 
 interface FakeRow {
@@ -100,12 +101,14 @@ class FakePrisma {
 function buildService(maxAttempts = 5) {
   const config = new ConfigService({ push: { maxAttempts } });
   const prisma = new FakePrisma();
+  const metrics = new MetricsService();
   const service = new NotificationOutboxService(
     config,
     prisma as never,
     new NotificationTemplateService(),
+    metrics,
   );
-  return { service, prisma };
+  return { service, prisma, metrics };
 }
 
 function draft(overrides: Partial<NotificationDraft> = {}): NotificationDraft {
@@ -139,6 +142,16 @@ describe('NotificationOutboxService', () => {
     expect(row.status).toBe('PENDING');
     expect(row.deduplicationKey).toBe('dedup-key-1');
     expect((row.payload as { count: number }).count).toBe(1);
+  });
+
+  it('increments notifications_queued_total on a fresh insert', async () => {
+    const { service, prisma, metrics } = buildService();
+
+    await service.enqueue(prisma as never, draft({ collapseStrategy: 'NONE' }));
+
+    expect(metrics.renderPrometheusText()).toContain(
+      'notifications_queued_total{application="DRIVER",type="DRIVER_NEW_TRIP_AVAILABLE"} 1',
+    );
   });
 
   it('is idempotent: re-enqueueing the same deduplicationKey never creates a second row', async () => {

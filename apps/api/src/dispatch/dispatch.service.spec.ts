@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { PrismaService } from '../database/prisma.service.js';
 import { TripStatus } from '../generated/prisma/client.js';
+import { MetricsService } from '../observability/metrics.service.js';
 import { NotificationOutboxService } from '../notifications/notification-outbox.service.js';
 import { NotificationService } from '../notifications/notification.service.js';
 import { NotificationTemplateService } from '../notifications/templates/notification-template.service.js';
@@ -260,6 +261,7 @@ function notificationServices(config: ConfigService) {
     config,
     undefined as unknown as PrismaService,
     new NotificationTemplateService(),
+    new MetricsService(),
   );
   return { notifications, notificationOutbox };
 }

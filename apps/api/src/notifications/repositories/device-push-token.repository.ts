@@ -210,4 +210,20 @@ export class DevicePushTokenRepository {
       },
     });
   }
+
+  /** Used by NotificationOutboxWorker to refresh the active_push_tokens gauge. */
+  async countActiveByApplicationAndPlatform(): Promise<
+    Array<{ application: PushApplication; platform: string; count: number }>
+  > {
+    const groups = await this.prisma.devicePushToken.groupBy({
+      by: ['application', 'platform'],
+      where: { status: 'ACTIVE' },
+      _count: { _all: true },
+    });
+    return groups.map((group) => ({
+      application: group.application,
+      platform: group.platform,
+      count: group._count._all,
+    }));
+  }
 }
