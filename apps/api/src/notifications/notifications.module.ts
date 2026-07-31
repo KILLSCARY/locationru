@@ -10,6 +10,7 @@ import { DevelopmentPushProvider } from './providers/development-push.provider.j
 import { FirebasePushProvider } from './providers/firebase-push.provider.js';
 import { PushProviderResolver } from './providers/push-provider.resolver.js';
 import { StagingPushProvider } from './providers/staging-push.provider.js';
+import { NotificationService } from './notification.service.js';
 import { DevicePushTokenRepository } from './repositories/device-push-token.repository.js';
 import { NotificationTemplateService } from './templates/notification-template.service.js';
 
@@ -22,6 +23,7 @@ import { NotificationTemplateService } from './templates/notification-template.s
     DevicePushTokenRepository,
     PushTokenCryptoService,
     NotificationTemplateService,
+    NotificationService,
     PushProviderResolver,
     DevelopmentPushProvider,
     StagingPushProvider,
@@ -31,6 +33,7 @@ import { NotificationTemplateService } from './templates/notification-template.s
   exports: [
     DevicePushTokenRepository,
     NotificationTemplateService,
+    NotificationService,
     PushProviderResolver,
   ],
 })
