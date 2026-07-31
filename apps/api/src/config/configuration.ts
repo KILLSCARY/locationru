@@ -10,6 +10,22 @@ function parseOriginList(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+/** PUSH_PROVIDER is lowercase in the env (matching SMS_PROVIDER's style); the value this returns matches the Prisma PushProviderType enum casing, since (unlike SMS) it is persisted on DevicePushToken.provider. */
+function parsePushProviderEnv(
+  value: string | undefined,
+): 'DEVELOPMENT' | 'STAGING' | 'FCM' | 'APNS' {
+  switch (value) {
+    case 'staging':
+      return 'STAGING';
+    case 'fcm':
+      return 'FCM';
+    case 'apns':
+      return 'APNS';
+    default:
+      return 'DEVELOPMENT';
+  }
+}
+
 export interface ApplicationConfig {
   app: {
     /** Node/npm ecosystem concern only (dependency pruning, framework dev warnings). */
@@ -168,6 +184,41 @@ export interface ApplicationConfig {
     requestCodeMaxPerDevicePerHour: number;
     requestCodeGlobalMaxPerMinute: number;
     verifyCodeMaxPerMinute: number;
+  };
+  push: {
+    provider: 'DEVELOPMENT' | 'STAGING' | 'FCM' | 'APNS';
+    tokenEncryptionKey: string;
+    tokenHashSecret: string;
+    maxBatchSize: number;
+    maxAttempts: number;
+    initialRetryDelaySeconds: number;
+    maxRetryDelaySeconds: number;
+    workerConcurrency: number;
+    outboxPollIntervalMs: number;
+    ttl: {
+      newOrderSeconds: number;
+      activeTripSeconds: number;
+      paymentSeconds: number;
+    };
+    fcm: {
+      projectId: string;
+      clientEmail: string;
+      privateKey: string;
+    };
+    apns: {
+      teamId: string;
+      keyId: string;
+      privateKey: string;
+      bundleId: string;
+      useSandbox: boolean;
+    };
+    rateLimit: {
+      registerMaxPerUserPerHour: number;
+    };
+  };
+  notification: {
+    defaultLocale: string;
+    inboxRetentionDays: number;
   };
 }
 
@@ -416,6 +467,53 @@ export default (): ApplicationConfig => ({
     ),
     verifyCodeMaxPerMinute: Number(
       process.env.AUTH_RATE_LIMIT_VERIFY_CODE_PER_REQUEST_PER_MINUTE ?? 10,
+    ),
+  },
+  push: {
+    provider: parsePushProviderEnv(process.env.PUSH_PROVIDER),
+    tokenEncryptionKey: process.env.PUSH_TOKEN_ENCRYPTION_KEY ?? '',
+    tokenHashSecret: process.env.PUSH_TOKEN_HASH_SECRET ?? '',
+    maxBatchSize: Number(process.env.PUSH_MAX_BATCH_SIZE ?? 500),
+    maxAttempts: Number(process.env.PUSH_MAX_ATTEMPTS ?? 5),
+    initialRetryDelaySeconds: Number(
+      process.env.PUSH_INITIAL_RETRY_DELAY_SECONDS ?? 5,
+    ),
+    maxRetryDelaySeconds: Number(
+      process.env.PUSH_MAX_RETRY_DELAY_SECONDS ?? 900,
+    ),
+    workerConcurrency: Number(process.env.PUSH_WORKER_CONCURRENCY ?? 10),
+    outboxPollIntervalMs: Number(
+      process.env.PUSH_OUTBOX_POLL_INTERVAL_MS ?? 1_000,
+    ),
+    ttl: {
+      newOrderSeconds: Number(process.env.PUSH_NEW_ORDER_TTL_SECONDS ?? 30),
+      activeTripSeconds: Number(
+        process.env.PUSH_ACTIVE_TRIP_TTL_SECONDS ?? 300,
+      ),
+      paymentSeconds: Number(process.env.PUSH_PAYMENT_TTL_SECONDS ?? 86_400),
+    },
+    fcm: {
+      projectId: process.env.FIREBASE_PROJECT_ID ?? '',
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL ?? '',
+      privateKey: process.env.FIREBASE_PRIVATE_KEY ?? '',
+    },
+    apns: {
+      teamId: process.env.APNS_TEAM_ID ?? '',
+      keyId: process.env.APNS_KEY_ID ?? '',
+      privateKey: process.env.APNS_PRIVATE_KEY ?? '',
+      bundleId: process.env.APNS_BUNDLE_ID ?? '',
+      useSandbox: process.env.APNS_USE_SANDBOX !== 'false',
+    },
+    rateLimit: {
+      registerMaxPerUserPerHour: Number(
+        process.env.PUSH_RATE_LIMIT_REGISTER_MAX_PER_USER_HOUR ?? 20,
+      ),
+    },
+  },
+  notification: {
+    defaultLocale: process.env.NOTIFICATION_DEFAULT_LOCALE ?? 'ru',
+    inboxRetentionDays: Number(
+      process.env.NOTIFICATION_INBOX_RETENTION_DAYS ?? 90,
     ),
   },
 });

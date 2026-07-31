@@ -437,4 +437,70 @@ export const environmentValidationSchema = Joi.object({
   ERROR_REPORTER_DSN: Joi.string().allow('').default(''),
 
   SEED_ADMIN_PHONE: Joi.string().allow('').default(''),
+
+  // --- Push notifications ---
+  // Same when()-in-branches caveat as SMS_PROVIDER above applies here.
+  PUSH_PROVIDER: Joi.string()
+    .default('development')
+    .when('APP_ENV', {
+      is: 'production',
+      then: Joi.valid('fcm', 'apns'),
+      otherwise: Joi.when('APP_ENV', {
+        is: 'staging',
+        then: Joi.valid('staging', 'fcm', 'apns'),
+        otherwise: Joi.valid('development', 'staging', 'fcm', 'apns'),
+      }),
+    }),
+  PUSH_TOKEN_ENCRYPTION_KEY: requiredWhenDeployed(
+    Joi.string().invalid(...KNOWN_DEMO_SECRETS),
+  ),
+  PUSH_TOKEN_HASH_SECRET: requiredWhenDeployed(
+    Joi.string()
+      .min(32)
+      .invalid(...KNOWN_DEMO_SECRETS),
+  ),
+  PUSH_MAX_BATCH_SIZE: Joi.number().integer().min(1).max(500).default(500),
+  PUSH_MAX_ATTEMPTS: Joi.number().integer().min(1).default(5),
+  PUSH_INITIAL_RETRY_DELAY_SECONDS: Joi.number().integer().min(1).default(5),
+  PUSH_MAX_RETRY_DELAY_SECONDS: Joi.number().integer().min(1).default(900),
+  PUSH_WORKER_CONCURRENCY: Joi.number().integer().min(1).default(10),
+  PUSH_OUTBOX_POLL_INTERVAL_MS: Joi.number().integer().min(100).default(1_000),
+  PUSH_NEW_ORDER_TTL_SECONDS: Joi.number().integer().min(1).default(30),
+  PUSH_ACTIVE_TRIP_TTL_SECONDS: Joi.number().integer().min(1).default(300),
+  PUSH_PAYMENT_TTL_SECONDS: Joi.number().integer().min(1).default(86_400),
+  PUSH_RATE_LIMIT_REGISTER_MAX_PER_USER_HOUR: Joi.number()
+    .integer()
+    .min(1)
+    .default(20),
+
+  FIREBASE_PROJECT_ID: Joi.string()
+    .allow('')
+    .default('')
+    .when('PUSH_PROVIDER', {
+      is: 'fcm',
+      then: Joi.string().min(1).required(),
+    }),
+  FIREBASE_CLIENT_EMAIL: Joi.string()
+    .allow('')
+    .default('')
+    .when('PUSH_PROVIDER', {
+      is: 'fcm',
+      then: Joi.string().min(1).required(),
+    }),
+  FIREBASE_PRIVATE_KEY: Joi.string()
+    .allow('')
+    .default('')
+    .when('PUSH_PROVIDER', {
+      is: 'fcm',
+      then: Joi.string().min(1).required(),
+    }),
+
+  APNS_TEAM_ID: Joi.string().allow('').default(''),
+  APNS_KEY_ID: Joi.string().allow('').default(''),
+  APNS_PRIVATE_KEY: Joi.string().allow('').default(''),
+  APNS_BUNDLE_ID: Joi.string().allow('').default(''),
+  APNS_USE_SANDBOX: Joi.boolean().default(true),
+
+  NOTIFICATION_DEFAULT_LOCALE: Joi.string().default('ru'),
+  NOTIFICATION_INBOX_RETENTION_DAYS: Joi.number().integer().min(1).default(90),
 });

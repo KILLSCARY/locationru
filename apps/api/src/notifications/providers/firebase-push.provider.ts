@@ -253,8 +253,7 @@ export class FirebasePushProvider implements PushProvider, OnModuleDestroy {
     ) {
       return PushProviderError.rateLimited('firebase');
     }
-    const detail = error instanceof Error ? error.message : String(error);
-    // Never log `detail` itself here — a firebase-admin error message can
+    // Never log the raw error message here — a firebase-admin error can
     // include the offending token. Log only the classified code.
     this.logger.warn({
       event: 'push.firebase_request_failed',
