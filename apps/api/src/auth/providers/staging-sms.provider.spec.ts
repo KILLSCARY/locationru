@@ -1,6 +1,7 @@
 import { jest } from '@jest/globals';
 import { ConfigService } from '@nestjs/config';
 
+import { VerificationChannel } from './sms-provider.interface.js';
 import {
   StagingSmsProvider,
   stagingOtpLookupKey,
@@ -12,6 +13,10 @@ class FakeRedis {
 
   async setWithTtl(key: string, value: string, ttl: number): Promise<void> {
     this.writes.push({ key, value, ttl });
+  }
+
+  async checkConnection(): Promise<void> {
+    await Promise.resolve();
   }
 }
 
@@ -26,14 +31,20 @@ describe('StagingSmsProvider', () => {
   it('stores the plaintext code under the staging lookup key, never returning it itself', async () => {
     const config = new ConfigService({
       app: { appEnvironment: 'staging' },
-      auth: { otpTtlSeconds: 300 },
+      otp: { ttlSeconds: 300 },
     });
     const redis = new FakeRedis();
     const provider = new StagingSmsProvider(config, redis as never);
 
-    const result = await provider.sendCode('+79995551234', '123456');
+    const result = await provider.sendVerificationCode({
+      phone: '+79995551234',
+      code: '123456',
+      message: 'Код входа в Resilient Taxi: 123456. Никому его не сообщайте.',
+      channel: VerificationChannel.STAGING,
+      requestId: 'request-1',
+    });
 
-    expect(result).toBeUndefined();
+    expect(result.status).toBe('DELIVERED');
     expect(redis.writes).toEqual([
       {
         key: stagingOtpLookupKey('+79995551234'),
@@ -43,10 +54,10 @@ describe('StagingSmsProvider', () => {
     ]);
   });
 
-  it('never logs the code itself', async () => {
+  it('never logs the code or message', async () => {
     const config = new ConfigService({
       app: { appEnvironment: 'staging' },
-      auth: { otpTtlSeconds: 300 },
+      otp: { ttlSeconds: 300 },
     });
     const redis = new FakeRedis();
     const provider = new StagingSmsProvider(config, redis as never);
@@ -56,10 +67,25 @@ describe('StagingSmsProvider', () => {
       'log',
     );
 
-    await provider.sendCode('+79995551234', 'super-secret-code');
+    await provider.sendVerificationCode({
+      phone: '+79995551234',
+      code: 'super-secret-code',
+      message: 'super-secret-message',
+      channel: VerificationChannel.STAGING,
+      requestId: 'request-1',
+    });
 
     for (const call of logSpy.mock.calls) {
       expect(JSON.stringify(call)).not.toContain('super-secret-code');
+      expect(JSON.stringify(call)).not.toContain('super-secret-message');
     }
+  });
+
+  it('healthCheck delegates to the Redis connection check', async () => {
+    const config = new ConfigService({ app: { appEnvironment: 'staging' } });
+    const redis = new FakeRedis();
+    const provider = new StagingSmsProvider(config, redis as never);
+
+    await expect(provider.healthCheck()).resolves.toEqual({ healthy: true });
   });
 });

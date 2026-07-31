@@ -8,6 +8,7 @@ import { AppModule } from './app.module.js';
 import { ApiExceptionFilter } from './common/filters/api-exception.filter.js';
 import { RequestIdMiddleware } from './observability/request-id.middleware.js';
 import { RequestLoggingInterceptor } from './observability/request-logging.interceptor.js';
+import { captureRawBody } from './webhooks/raw-body.middleware.js';
 
 export async function createApplication(): Promise<NestExpressApplication> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -18,6 +19,16 @@ export async function createApplication(): Promise<NestExpressApplication> {
   });
 
   const configService = app.get(ConfigService);
+
+  // Behind the reverse proxy used in staging/production (docker-compose),
+  // req.ip must resolve to the real client address, not the proxy's — both
+  // AuthRateLimitService's per-IP axis and the SMS.RU webhook's IP allowlist
+  // depend on it.
+  app.set('trust proxy', 1);
+
+  // Registered before the JSON body parser so it captures the SMS.RU
+  // webhook's exact raw bytes regardless of content-type.
+  app.use('/api/v1/webhooks/sms/sms-ru', captureRawBody);
 
   app.useBodyParser('json', {
     limit: configService.getOrThrow<number>('app.bodyLimitBytes'),

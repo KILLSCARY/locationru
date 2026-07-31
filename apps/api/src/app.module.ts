@@ -18,6 +18,7 @@ import { RealtimeModule } from './realtime/realtime.module.js';
 import { StagingToolsModule } from './staging-tools/staging-tools.module.js';
 import { StorageModule } from './storage/storage.module.js';
 import { TripsModule } from './trips/trips.module.js';
+import { SmsWebhookModule } from './webhooks/sms-webhook.module.js';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { TripsModule } from './trips/trips.module.js';
     MapsModule,
     StorageModule,
     StagingToolsModule,
+    SmsWebhookModule,
   ],
 })
 export class AppModule {}

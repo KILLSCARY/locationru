@@ -11,7 +11,12 @@ interface DriverApi {
     @POST("auth/request-code")
     suspend fun requestCode(
         @Body request: RequestCodeRequest,
-    )
+    ): RequestCodeResponse
+
+    @POST("auth/resend-code")
+    suspend fun resendCode(
+        @Body request: ResendCodeRequest,
+    ): RequestCodeResponse
 
     @POST("auth/verify-code")
     suspend fun verifyCode(
@@ -59,10 +64,26 @@ interface DriverApi {
 @Serializable
 data class RequestCodeRequest(
     val phone: String,
+    val deviceId: String,
+)
+
+@Serializable
+data class ResendCodeRequest(
+    val requestId: String,
+    val phone: String,
+    val deviceId: String,
+)
+
+@Serializable
+data class RequestCodeResponse(
+    val requestId: String,
+    val expiresInSeconds: Int,
+    val resendInSeconds: Int,
 )
 
 @Serializable
 data class VerifyCodeRequest(
+    val requestId: String,
     val phone: String,
     val code: String,
     val deviceId: String,

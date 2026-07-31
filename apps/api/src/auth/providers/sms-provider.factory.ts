@@ -3,7 +3,7 @@ import { AppEnvironment } from '@resilient-taxi/config';
 
 import { RedisService } from '../../redis/redis.service.js';
 import { DevelopmentSmsProvider } from './development-sms.provider.js';
-import { HttpSmsProvider } from './http-sms.provider.js';
+import { SmsRuProvider } from './sms-ru.provider.js';
 import { StagingSmsProvider } from './staging-sms.provider.js';
 import type { SmsProvider } from './sms-provider.interface.js';
 
@@ -17,7 +17,7 @@ export function createSmsProvider(
   config: ConfigService,
   redis: RedisService,
 ): SmsProvider {
-  const provider = config.getOrThrow<'development' | 'staging' | 'http'>(
+  const provider = config.getOrThrow<'development' | 'staging' | 'sms-ru'>(
     'sms.provider',
   );
   const environment = config.getOrThrow<AppEnvironment>('app.appEnvironment');
@@ -28,7 +28,7 @@ export function createSmsProvider(
       environment === AppEnvironment.PRODUCTION
     ) {
       throw new Error(
-        'DevelopmentSmsProvider must not be used in staging or production; set SMS_PROVIDER=staging or http',
+        'DevelopmentSmsProvider must not be used in staging or production; set SMS_PROVIDER=staging or sms-ru',
       );
     }
     return new DevelopmentSmsProvider(config);
@@ -37,11 +37,11 @@ export function createSmsProvider(
   if (provider === 'staging') {
     if (environment === AppEnvironment.PRODUCTION) {
       throw new Error(
-        'StagingSmsProvider must not be used in production; set SMS_PROVIDER=http',
+        'StagingSmsProvider must not be used in production; set SMS_PROVIDER=sms-ru',
       );
     }
     return new StagingSmsProvider(config, redis);
   }
 
-  return new HttpSmsProvider(config);
+  return new SmsRuProvider(config);
 }

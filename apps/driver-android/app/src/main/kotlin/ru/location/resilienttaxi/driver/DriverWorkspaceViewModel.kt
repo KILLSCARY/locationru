@@ -16,6 +16,7 @@ import ru.location.resilienttaxi.driver.core.network.CreateBidRequest
 import ru.location.resilienttaxi.driver.core.network.DriverApi
 import ru.location.resilienttaxi.driver.core.network.DriverBidResponse
 import ru.location.resilienttaxi.driver.core.network.RequestCodeRequest
+import ru.location.resilienttaxi.driver.core.network.ResendCodeRequest
 import ru.location.resilienttaxi.driver.core.network.VerifyCodeRequest
 import ru.location.resilienttaxi.driver.domain.DriverSession
 import ru.location.resilienttaxi.driver.domain.OtpCode
@@ -35,6 +36,10 @@ sealed interface DriverUiState {
 
     data class CodeEntry(
         val phone: String,
+        val requestId: String,
+        // Absolute wall-clock target, not a running countdown — survives
+        // process death/app backgrounding without needing its own timer state.
+        val resendAvailableAtEpochMillis: Long,
         val error: String? = null,
         val isLoading: Boolean = false,
     ) : DriverUiState
@@ -73,28 +78,58 @@ class DriverWorkspaceViewModel
             }
             mutableState.value = DriverUiState.PhoneEntry(isLoading = true)
             viewModelScope.launch {
-                runCatching { api.requestCode(RequestCodeRequest(normalized)) }
-                    .onSuccess { mutableState.value = DriverUiState.CodeEntry(normalized) }
-                    .onFailure { mutableState.value = DriverUiState.PhoneEntry(error = humanError(it)) }
+                runCatching { api.requestCode(RequestCodeRequest(normalized, deviceId())) }
+                    .onSuccess { response ->
+                        mutableState.value =
+                            DriverUiState.CodeEntry(
+                                phone = normalized,
+                                requestId = response.requestId,
+                                resendAvailableAtEpochMillis =
+                                    System.currentTimeMillis() + response.resendInSeconds * 1_000L,
+                            )
+                    }.onFailure { mutableState.value = DriverUiState.PhoneEntry(error = humanError(it)) }
+            }
+        }
+
+        fun resendCode() {
+            val codeEntry = state.value as? DriverUiState.CodeEntry ?: return
+            mutableState.value = codeEntry.copy(isLoading = true, error = null)
+            viewModelScope.launch {
+                runCatching {
+                    api.resendCode(ResendCodeRequest(codeEntry.requestId, codeEntry.phone, deviceId()))
+                }.onSuccess { response ->
+                    mutableState.value =
+                        codeEntry.copy(
+                            isLoading = false,
+                            resendAvailableAtEpochMillis =
+                                System.currentTimeMillis() + response.resendInSeconds * 1_000L,
+                        )
+                }.onFailure {
+                    mutableState.value = codeEntry.copy(isLoading = false, error = humanError(it))
+                }
             }
         }
 
         fun verifyCode(
-            phone: String,
+            codeEntry: DriverUiState.CodeEntry,
             code: String,
         ) {
             if (!OtpCode.isValid(code)) {
-                mutableState.value = DriverUiState.CodeEntry(phone, error = "Код состоит из 6 цифр")
+                mutableState.value = codeEntry.copy(error = "Введите код из SMS")
                 return
             }
-            mutableState.value = DriverUiState.CodeEntry(phone, isLoading = true)
+            mutableState.value = codeEntry.copy(isLoading = true, error = null)
             viewModelScope.launch {
                 runCatching {
-                    api.verifyCode(VerifyCodeRequest(phone, code, deviceId()))
+                    api.verifyCode(
+                        VerifyCodeRequest(codeEntry.requestId, codeEntry.phone, code, deviceId()),
+                    )
                 }.onSuccess {
                     tokenStorage.save(DriverSession(it.accessToken, it.refreshToken))
                     loadWorkspace(it.accessToken)
-                }.onFailure { mutableState.value = DriverUiState.CodeEntry(phone, error = humanError(it)) }
+                }.onFailure {
+                    mutableState.value = codeEntry.copy(isLoading = false, error = humanError(it))
+                }
             }
         }
 

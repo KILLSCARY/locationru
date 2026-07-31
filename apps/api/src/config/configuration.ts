@@ -36,19 +36,32 @@ export interface ApplicationConfig {
     accessTokenTtlSeconds: number;
     jwtSecret: string;
     otpHashSecret: string;
-    otpMaxAttempts: number;
-    otpRequestLimit: number;
-    otpRequestWindowSeconds: number;
-    otpTtlSeconds: number;
     refreshTokenTtlSeconds: number;
     enableDevelopmentOtp: boolean;
+    maxActiveSessions: number;
+  };
+  otp: {
+    smsCodeLength: number;
+    ttlSeconds: number;
+    maxAttempts: number;
+    resendInitialSeconds: number;
+    maxSendsPerPhoneHour: number;
+    maxSendsPerIpHour: number;
+    blockSeconds: number;
   };
   sms: {
-    provider: 'development' | 'staging' | 'http';
-    apiBaseUrl: string;
-    apiKey: string;
-    sender: string;
-    requestTimeoutMs: number;
+    provider: 'development' | 'staging' | 'sms-ru';
+    senderId: string;
+    smsRu: {
+      apiId: string;
+      apiBaseUrl: string;
+      timeoutMs: number;
+      maxRetries: number;
+      circuitFailureThreshold: number;
+      circuitOpenMs: number;
+      webhookSecret: string;
+      webhookIpAllowlist: string[];
+    };
   };
   trips: {
     boardingCodeHashSecret: string;
@@ -151,6 +164,11 @@ export interface ApplicationConfig {
   seed: {
     adminPhone: string;
   };
+  authRateLimit: {
+    requestCodeMaxPerDevicePerHour: number;
+    requestCodeGlobalMaxPerMinute: number;
+    verifyCodeMaxPerMinute: number;
+  };
 }
 
 export default (): ApplicationConfig => ({
@@ -182,24 +200,39 @@ export default (): ApplicationConfig => ({
     ),
     jwtSecret: process.env.AUTH_JWT_SECRET ?? '',
     otpHashSecret: process.env.AUTH_OTP_HASH_SECRET ?? '',
-    otpMaxAttempts: Number(process.env.AUTH_OTP_MAX_ATTEMPTS ?? 5),
-    otpRequestLimit: Number(process.env.AUTH_OTP_REQUEST_LIMIT ?? 3),
-    otpRequestWindowSeconds: Number(
-      process.env.AUTH_OTP_REQUEST_WINDOW_SECONDS ?? 60,
-    ),
-    otpTtlSeconds: Number(process.env.AUTH_OTP_TTL_SECONDS ?? 300),
     refreshTokenTtlSeconds: Number(
       process.env.AUTH_REFRESH_TOKEN_TTL_SECONDS ?? 2_592_000,
     ),
     enableDevelopmentOtp: process.env.ENABLE_DEVELOPMENT_OTP === 'true',
+    maxActiveSessions: Number(process.env.AUTH_MAX_ACTIVE_SESSIONS ?? 10),
+  },
+  otp: {
+    smsCodeLength: Number(process.env.OTP_SMS_CODE_LENGTH ?? 6),
+    ttlSeconds: Number(process.env.OTP_TTL_SECONDS ?? 300),
+    maxAttempts: Number(process.env.OTP_MAX_ATTEMPTS ?? 5),
+    resendInitialSeconds: Number(process.env.OTP_RESEND_INITIAL_SECONDS ?? 60),
+    maxSendsPerPhoneHour: Number(process.env.OTP_MAX_SENDS_PER_PHONE_HOUR ?? 5),
+    maxSendsPerIpHour: Number(process.env.OTP_MAX_SENDS_PER_IP_HOUR ?? 20),
+    blockSeconds: Number(process.env.OTP_BLOCK_SECONDS ?? 900),
   },
   sms: {
     provider: (process.env.SMS_PROVIDER ??
       'development') as ApplicationConfig['sms']['provider'],
-    apiBaseUrl: process.env.SMS_API_BASE_URL ?? '',
-    apiKey: process.env.SMS_API_KEY ?? '',
-    sender: process.env.SMS_SENDER ?? '',
-    requestTimeoutMs: Number(process.env.SMS_REQUEST_TIMEOUT_MS ?? 10_000),
+    senderId: process.env.SMS_SENDER_ID ?? '',
+    smsRu: {
+      apiId: process.env.SMS_RU_API_ID ?? '',
+      apiBaseUrl: process.env.SMS_RU_API_BASE_URL ?? 'https://sms.ru',
+      timeoutMs: Number(process.env.SMS_RU_TIMEOUT_MS ?? 10_000),
+      maxRetries: Number(process.env.SMS_RU_MAX_RETRIES ?? 2),
+      circuitFailureThreshold: Number(
+        process.env.SMS_RU_CIRCUIT_FAILURE_THRESHOLD ?? 5,
+      ),
+      circuitOpenMs: Number(process.env.SMS_RU_CIRCUIT_OPEN_MS ?? 30_000),
+      webhookSecret: process.env.SMS_RU_WEBHOOK_SECRET ?? '',
+      webhookIpAllowlist: parseOriginList(
+        process.env.SMS_RU_WEBHOOK_IP_ALLOWLIST,
+      ),
+    },
   },
   trips: {
     boardingCodeHashSecret: process.env.TRIPS_BOARDING_CODE_HASH_SECRET ?? '',
@@ -373,5 +406,16 @@ export default (): ApplicationConfig => ({
   },
   seed: {
     adminPhone: process.env.SEED_ADMIN_PHONE ?? '',
+  },
+  authRateLimit: {
+    requestCodeMaxPerDevicePerHour: Number(
+      process.env.AUTH_RATE_LIMIT_REQUEST_CODE_PER_DEVICE_HOUR ?? 10,
+    ),
+    requestCodeGlobalMaxPerMinute: Number(
+      process.env.AUTH_RATE_LIMIT_REQUEST_CODE_GLOBAL_PER_MINUTE ?? 500,
+    ),
+    verifyCodeMaxPerMinute: Number(
+      process.env.AUTH_RATE_LIMIT_VERIFY_CODE_PER_REQUEST_PER_MINUTE ?? 10,
+    ),
   },
 });

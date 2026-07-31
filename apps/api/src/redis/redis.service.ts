@@ -44,6 +44,11 @@ export class RedisService implements OnModuleDestroy {
     await this.client.setex(key, ttlSeconds, value);
   }
 
+  /** No TTL — only for state that must survive until explicitly deleted (e.g. an admin's indefinite auth block). Prefer setWithTtl for anything that should self-expire. */
+  async setPersistent(key: string, value: string): Promise<void> {
+    await this.client.set(key, value);
+  }
+
   async setIfNotExistsWithTtl(
     key: string,
     value: string,

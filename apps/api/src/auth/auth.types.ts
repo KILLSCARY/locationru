@@ -15,3 +15,13 @@ export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
 }
+
+export interface SessionSummary {
+  id: string;
+  deviceId: string;
+  platform: 'IOS' | 'ANDROID' | 'WEB';
+  appVersion: string | null;
+  createdAt: Date;
+  lastSeenAt: Date;
+  isCurrent: boolean;
+}

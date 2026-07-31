@@ -90,10 +90,29 @@ export const environmentValidationSchema = Joi.object({
     .integer()
     .min(300)
     .default(2_592_000),
-  AUTH_OTP_TTL_SECONDS: Joi.number().integer().min(30).default(300),
-  AUTH_OTP_MAX_ATTEMPTS: Joi.number().integer().min(1).default(5),
-  AUTH_OTP_REQUEST_LIMIT: Joi.number().integer().min(1).default(3),
-  AUTH_OTP_REQUEST_WINDOW_SECONDS: Joi.number().integer().min(1).default(60),
+  AUTH_MAX_ACTIVE_SESSIONS: Joi.number().integer().min(1).default(10),
+
+  // --- OTP policy (owned by OtpService, independent of the SMS transport) ---
+  OTP_SMS_CODE_LENGTH: Joi.number().integer().min(4).max(10).default(6),
+  OTP_TTL_SECONDS: Joi.number().integer().min(30).default(300),
+  OTP_MAX_ATTEMPTS: Joi.number().integer().min(1).default(5),
+  OTP_RESEND_INITIAL_SECONDS: Joi.number().integer().min(10).default(60),
+  OTP_MAX_SENDS_PER_PHONE_HOUR: Joi.number().integer().min(1).default(5),
+  OTP_MAX_SENDS_PER_IP_HOUR: Joi.number().integer().min(1).default(20),
+  OTP_BLOCK_SECONDS: Joi.number().integer().min(60).default(900),
+
+  AUTH_RATE_LIMIT_REQUEST_CODE_PER_DEVICE_HOUR: Joi.number()
+    .integer()
+    .min(1)
+    .default(10),
+  AUTH_RATE_LIMIT_REQUEST_CODE_GLOBAL_PER_MINUTE: Joi.number()
+    .integer()
+    .min(1)
+    .default(500),
+  AUTH_RATE_LIMIT_VERIFY_CODE_PER_REQUEST_PER_MINUTE: Joi.number()
+    .integer()
+    .min(1)
+    .default(10),
 
   // Reserved, hard-disabled outside development: no code path currently
   // grants either behavior, but a staging/production boot must never be
@@ -126,31 +145,47 @@ export const environmentValidationSchema = Joi.object({
     .default('development')
     .when('APP_ENV', {
       is: 'production',
-      then: Joi.valid('http'),
+      then: Joi.valid('sms-ru'),
       otherwise: Joi.when('APP_ENV', {
         is: 'staging',
-        then: Joi.valid('staging', 'http'),
-        otherwise: Joi.valid('development', 'staging', 'http'),
+        then: Joi.valid('staging', 'sms-ru'),
+        otherwise: Joi.valid('development', 'staging', 'sms-ru'),
       }),
     }),
-  SMS_API_BASE_URL: Joi.string()
-    .uri({ scheme: ['http', 'https'] })
-    .when('SMS_PROVIDER', {
-      is: 'http',
-      then: Joi.required(),
-      otherwise: Joi.optional(),
-    }),
-  SMS_API_KEY: Joi.string().min(1).when('SMS_PROVIDER', {
-    is: 'http',
+  // Optional in every tier: SMS.RU accepts sends without a registered sender
+  // ID (delivered from a shared shortcode instead of a named sender), so a
+  // missing value must never block boot.
+  SMS_SENDER_ID: Joi.string().allow('').default(''),
+  SMS_RU_API_ID: Joi.string().min(1).when('SMS_PROVIDER', {
+    is: 'sms-ru',
     then: Joi.required(),
     otherwise: Joi.optional(),
   }),
-  SMS_SENDER: Joi.string().allow('').default(''),
-  SMS_REQUEST_TIMEOUT_MS: Joi.number()
+  SMS_RU_API_BASE_URL: Joi.string()
+    .uri({ scheme: ['http', 'https'] })
+    .default('https://sms.ru'),
+  SMS_RU_TIMEOUT_MS: Joi.number()
     .integer()
     .min(1_000)
     .max(60_000)
     .default(10_000),
+  SMS_RU_MAX_RETRIES: Joi.number().integer().min(0).max(5).default(2),
+  SMS_RU_CIRCUIT_FAILURE_THRESHOLD: Joi.number().integer().min(1).default(5),
+  SMS_RU_CIRCUIT_OPEN_MS: Joi.number().integer().min(1_000).default(30_000),
+  // Primary webhook authenticity guard: a shared secret embedded in the
+  // callback URL registered in the SMS.RU cabinet (?token=...), since SMS.RU
+  // does not sign its status callbacks. See docs/auth/sms-ru-webhook.md.
+  SMS_RU_WEBHOOK_SECRET: Joi.string()
+    .min(16)
+    .invalid(...KNOWN_DEMO_SECRETS)
+    .when('SMS_PROVIDER', {
+      is: 'sms-ru',
+      then: Joi.required(),
+      otherwise: Joi.optional(),
+    }),
+  // Secondary check only — never the sole authenticity guard on the webhook
+  // (see handleStatusWebhook / docs/auth/sms-ru-webhook.md).
+  SMS_RU_WEBHOOK_IP_ALLOWLIST: Joi.string().allow('').default(''),
 
   TRIPS_MIN_PASSENGER_PRICE_KOPECKS: Joi.number()
     .integer()

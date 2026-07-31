@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 
 import { ERROR_REPORTER } from './error-reporter.interface.js';
 import { createErrorReporter } from './error-reporter.factory.js';
+import { MetricsController } from './metrics.controller.js';
+import { MetricsService } from './metrics.service.js';
 import { RequestLoggingInterceptor } from './request-logging.interceptor.js';
 
 /**
@@ -11,14 +13,16 @@ import { RequestLoggingInterceptor } from './request-logging.interceptor.js';
  */
 @Global()
 @Module({
+  controllers: [MetricsController],
   providers: [
     RequestLoggingInterceptor,
+    MetricsService,
     {
       provide: ERROR_REPORTER,
       inject: [ConfigService],
       useFactory: createErrorReporter,
     },
   ],
-  exports: [RequestLoggingInterceptor, ERROR_REPORTER],
+  exports: [RequestLoggingInterceptor, ERROR_REPORTER, MetricsService],
 })
 export class ObservabilityModule {}

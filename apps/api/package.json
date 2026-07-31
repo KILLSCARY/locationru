@@ -22,7 +22,8 @@
     "db:seed:staging": "tsx prisma/seed-staging.ts",
     "db:validate": "prisma validate",
     "simulate:trip": "tsx scripts/simulate-trip.ts",
-    "staging:smoke": "tsx scripts/staging-smoke.ts"
+    "staging:smoke": "tsx scripts/staging-smoke.ts",
+    "staging:test:sms": "tsx scripts/staging-test-sms.ts"
   },
   "dependencies": {
     "@resilient-taxi/config": "workspace:*",

@@ -43,6 +43,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.delay
 import ru.location.resilienttaxi.driver.core.designsystem.ResilientTaxiTheme
 import ru.location.resilienttaxi.driver.core.maps.GeoPoint
 import ru.location.resilienttaxi.driver.core.maps.MapBoundsModel
@@ -77,7 +78,7 @@ private fun DriverApp(viewModel: DriverWorkspaceViewModel = hiltViewModel()) {
     when (val state = viewModel.state.collectAsState().value) {
         DriverUiState.Restoring -> LoadingScreen("Восстанавливаем сессию…")
         is DriverUiState.PhoneEntry -> PhoneScreen(state, viewModel::requestCode)
-        is DriverUiState.CodeEntry -> CodeScreen(state, viewModel::verifyCode)
+        is DriverUiState.CodeEntry -> CodeScreen(state, viewModel::verifyCode, viewModel::resendCode)
         is DriverUiState.Workspace ->
             WorkspaceScreen(
                 state = state,
@@ -110,24 +111,52 @@ private fun PhoneScreen(
 @Composable
 private fun CodeScreen(
     state: DriverUiState.CodeEntry,
-    onSubmit: (String, String) -> Unit,
+    onSubmit: (DriverUiState.CodeEntry, String) -> Unit,
+    onResend: () -> Unit,
 ) {
     var code by remember { mutableStateOf("") }
+    var remainingSeconds by remember { mutableStateOf(0) }
+
+    LaunchedEffect(state.resendAvailableAtEpochMillis) {
+        while (true) {
+            remainingSeconds =
+                ((state.resendAvailableAtEpochMillis - System.currentTimeMillis()) / 1000)
+                    .toInt()
+                    .coerceAtLeast(0)
+            if (remainingSeconds == 0) break
+            delay(1_000)
+        }
+    }
+
     FormScreen("Подтверждение номера") {
-        Text("Код отправлен на ${state.phone}")
+        Text("Код отправлен на ${maskPhone(state.phone)}")
         OutlinedTextField(
             value = code,
             onValueChange = { code = OtpCode.sanitize(it) },
-            label = { Text("Код из 6 цифр") },
+            label = { Text("Код из SMS") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.fillMaxWidth(),
         )
         state.error?.let { ErrorText(it) }
-        Button(onClick = { onSubmit(state.phone, code) }, enabled = !state.isLoading, modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = { onSubmit(state, code) }, enabled = !state.isLoading, modifier = Modifier.fillMaxWidth()) {
             Text(if (state.isLoading) "Проверяем…" else "Войти")
+        }
+        Button(
+            onClick = onResend,
+            enabled = !state.isLoading && remainingSeconds == 0,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (remainingSeconds > 0) "Отправить повторно (${remainingSeconds}с)" else "Отправить код повторно")
         }
     }
 }
+
+private fun maskPhone(phone: String): String =
+    if (phone.length > 4) {
+        "${phone.take(2)}${"*".repeat(phone.length - 4)}${phone.takeLast(2)}"
+    } else {
+        phone
+    }
 
 @Composable
 private fun WorkspaceScreen(

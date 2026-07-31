@@ -79,6 +79,8 @@ export default async function AdminPage({
       <h1>Resilient Taxi — администрирование</h1>
       <p className="muted">
         Сервер API проверяет роль ADMIN для каждого административного запроса.{' '}
+        <Link href="/auth-monitoring">Мониторинг авторизации</Link>
+        {' · '}
         <Link href="/staging">Staging tools</Link> (только staging +
         SUPER_ADMIN).
       </p>
