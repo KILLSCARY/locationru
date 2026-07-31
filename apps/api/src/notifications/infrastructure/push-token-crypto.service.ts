@@ -53,9 +53,10 @@ export class PushTokenCryptoService {
     const ciphertext = data.subarray(IV_BYTES + 16);
     const decipher = createDecipheriv(ALGORITHM, this.encryptionKey, iv);
     decipher.setAuthTag(authTag);
-    return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString(
-      'utf8',
-    );
+    return Buffer.concat([
+      decipher.update(ciphertext),
+      decipher.final(),
+    ]).toString('utf8');
   }
 
   hash(rawToken: string): string {

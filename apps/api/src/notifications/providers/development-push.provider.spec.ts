@@ -5,7 +5,9 @@ import { DevelopmentPushProvider } from './development-push.provider.js';
 
 describe('DevelopmentPushProvider', () => {
   it('never logs the raw token and accepts every send', async () => {
-    const config = new ConfigService({ app: { appEnvironment: 'development' } });
+    const config = new ConfigService({
+      app: { appEnvironment: 'development' },
+    });
     const provider = new DevelopmentPushProvider(config);
     const logSpy = jest.spyOn(
       (provider as unknown as { logger: { log: (...args: unknown[]) => void } })
@@ -35,8 +37,16 @@ describe('DevelopmentPushProvider', () => {
 
     const result = await provider.sendToDevices({
       targets: [
-        { devicePushTokenId: 'a', rawToken: 'token-a', platform: 'ANDROID' as never },
-        { devicePushTokenId: 'b', rawToken: 'token-b', platform: 'IOS' as never },
+        {
+          devicePushTokenId: 'a',
+          rawToken: 'token-a',
+          platform: 'ANDROID' as never,
+        },
+        {
+          devicePushTokenId: 'b',
+          rawToken: 'token-b',
+          platform: 'IOS' as never,
+        },
       ],
       title: 't',
       body: 'b',

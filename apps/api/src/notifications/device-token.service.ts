@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppEnvironment } from '@resilient-taxi/config';
 
@@ -109,13 +113,15 @@ export class DeviceTokenService {
     }
   }
 
-  async registerDevice(input: RegisterDeviceInput): Promise<PublicDevicePushToken> {
+  async registerDevice(
+    input: RegisterDeviceInput,
+  ): Promise<PublicDevicePushToken> {
     this.validateTokenFormat(input.rawToken);
 
-    const environment = this.config.getOrThrow<AppEnvironment>('app.appEnvironment');
-    const configuredProvider = this.config.getOrThrow<PushProviderType>(
-      'push.provider',
-    );
+    const environment =
+      this.config.getOrThrow<AppEnvironment>('app.appEnvironment');
+    const configuredProvider =
+      this.config.getOrThrow<PushProviderType>('push.provider');
     const provider = determinePushProviderType(
       environment,
       input.platform,
@@ -141,7 +147,9 @@ export class DeviceTokenService {
   }
 
   /** Same as registerDevice — a token refresh is just a new registration for the same (user, device, application); DevicePushTokenRepository.register already handles both the idempotent-same-token and the supersede-old-token cases. */
-  async refreshDevice(input: RegisterDeviceInput): Promise<PublicDevicePushToken> {
+  async refreshDevice(
+    input: RegisterDeviceInput,
+  ): Promise<PublicDevicePushToken> {
     return this.registerDevice(input);
   }
 

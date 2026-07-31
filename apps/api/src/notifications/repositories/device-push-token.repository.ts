@@ -147,21 +147,36 @@ export class DevicePushTokenRepository {
   async revoke(id: string, reason: string): Promise<void> {
     await this.prisma.devicePushToken.updateMany({
       where: { id, status: 'ACTIVE' },
-      data: { status: 'REVOKED', invalidatedAt: new Date(), invalidationReason: reason },
+      data: {
+        status: 'REVOKED',
+        invalidatedAt: new Date(),
+        invalidationReason: reason,
+      },
     });
   }
 
-  async revokeBySession(deviceSessionId: string, reason: string): Promise<void> {
+  async revokeBySession(
+    deviceSessionId: string,
+    reason: string,
+  ): Promise<void> {
     await this.prisma.devicePushToken.updateMany({
       where: { deviceSessionId, status: 'ACTIVE' },
-      data: { status: 'REVOKED', invalidatedAt: new Date(), invalidationReason: reason },
+      data: {
+        status: 'REVOKED',
+        invalidatedAt: new Date(),
+        invalidationReason: reason,
+      },
     });
   }
 
   async revokeAllForUser(userId: string, reason: string): Promise<void> {
     await this.prisma.devicePushToken.updateMany({
       where: { userId, status: 'ACTIVE' },
-      data: { status: 'REVOKED', invalidatedAt: new Date(), invalidationReason: reason },
+      data: {
+        status: 'REVOKED',
+        invalidatedAt: new Date(),
+        invalidationReason: reason,
+      },
     });
   }
 
@@ -169,7 +184,11 @@ export class DevicePushTokenRepository {
   async markInvalid(id: string, reason: string): Promise<void> {
     await this.prisma.devicePushToken.updateMany({
       where: { id },
-      data: { status: 'INVALID', invalidatedAt: new Date(), invalidationReason: reason },
+      data: {
+        status: 'INVALID',
+        invalidatedAt: new Date(),
+        invalidationReason: reason,
+      },
     });
   }
 
@@ -185,7 +204,10 @@ export class DevicePushTokenRepository {
     sinceMs: number,
   ): Promise<number> {
     return this.prisma.devicePushToken.count({
-      where: { userId, lastRegisteredAt: { gte: new Date(Date.now() - sinceMs) } },
+      where: {
+        userId,
+        lastRegisteredAt: { gte: new Date(Date.now() - sinceMs) },
+      },
     });
   }
 }

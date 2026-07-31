@@ -40,11 +40,7 @@ class FakePrisma {
       }
       return null;
     },
-    findFirst: async ({
-      where,
-    }: {
-      where: Record<string, unknown>;
-    }) => {
+    findFirst: async ({ where }: { where: Record<string, unknown> }) => {
       for (const row of this.rows.values()) {
         if (
           Object.entries(where).every(
@@ -120,12 +116,15 @@ class FakePrisma {
       return [...this.rows.values()].filter(
         (row) =>
           row.userId === where.userId &&
-          row.lastRegisteredAt.getTime() >= where.lastRegisteredAt.gte.getTime(),
+          row.lastRegisteredAt.getTime() >=
+            where.lastRegisteredAt.gte.getTime(),
       ).length;
     },
   };
 
-  async $transaction<T>(callback: (transaction: this) => Promise<T>): Promise<T> {
+  async $transaction<T>(
+    callback: (transaction: this) => Promise<T>,
+  ): Promise<T> {
     return callback(this);
   }
 }
@@ -175,7 +174,9 @@ describe('DevicePushTokenRepository', () => {
 
   it('re-registering the exact same raw token is idempotent and just refreshes metadata', async () => {
     const { repository, prisma } = buildRepository();
-    const first = await repository.register(registrationInput({ appVersion: '1.0.0' }));
+    const first = await repository.register(
+      registrationInput({ appVersion: '1.0.0' }),
+    );
 
     const second = await repository.register(
       registrationInput({ appVersion: '1.1.0', deviceSessionId: 'session-2' }),
@@ -189,9 +190,13 @@ describe('DevicePushTokenRepository', () => {
 
   it('registering a new physical token for the same (user, device, application) revokes the old row as TOKEN_REPLACED', async () => {
     const { repository, prisma } = buildRepository();
-    const first = await repository.register(registrationInput({ rawToken: 'token-v1' }));
+    const first = await repository.register(
+      registrationInput({ rawToken: 'token-v1' }),
+    );
 
-    const second = await repository.register(registrationInput({ rawToken: 'token-v2' }));
+    const second = await repository.register(
+      registrationInput({ rawToken: 'token-v2' }),
+    );
 
     expect(second.id).not.toBe(first.id);
     const oldRow = prisma.rows.get(first.id)!;
@@ -204,7 +209,10 @@ describe('DevicePushTokenRepository', () => {
   it('does not revoke an existing row belonging to a different application', async () => {
     const { repository } = buildRepository();
     await repository.register(
-      registrationInput({ rawToken: 'passenger-token', application: 'PASSENGER' as never }),
+      registrationInput({
+        rawToken: 'passenger-token',
+        application: 'PASSENGER' as never,
+      }),
     );
 
     await repository.register(
@@ -222,9 +230,14 @@ describe('DevicePushTokenRepository', () => {
 
   it('listActiveTargetsForUser returns correctly decrypted raw tokens', async () => {
     const { repository } = buildRepository();
-    await repository.register(registrationInput({ rawToken: 'raw-token-for-send' }));
+    await repository.register(
+      registrationInput({ rawToken: 'raw-token-for-send' }),
+    );
 
-    const targets = await repository.listActiveTargetsForUser('user-1', 'PASSENGER' as never);
+    const targets = await repository.listActiveTargetsForUser(
+      'user-1',
+      'PASSENGER' as never,
+    );
 
     expect(targets).toHaveLength(1);
     expect(targets[0]!.rawToken).toBe('raw-token-for-send');

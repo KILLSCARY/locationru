@@ -87,7 +87,11 @@ describe('PushTokenCryptoService', () => {
 
   it('throws at construction time when the encryption key does not decode to 32 bytes', () => {
     expect(() =>
-      buildService({ tokenEncryptionKey: Buffer.from('too-short').toString('base64') }),
-    ).toThrow('PUSH_TOKEN_ENCRYPTION_KEY must decode (base64) to exactly 32 bytes');
+      buildService({
+        tokenEncryptionKey: Buffer.from('too-short').toString('base64'),
+      }),
+    ).toThrow(
+      'PUSH_TOKEN_ENCRYPTION_KEY must decode (base64) to exactly 32 bytes',
+    );
   });
 });

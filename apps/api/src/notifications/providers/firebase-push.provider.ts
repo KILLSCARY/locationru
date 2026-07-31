@@ -101,7 +101,9 @@ export class FirebasePushProvider implements PushProvider, OnModuleDestroy {
             results.push({
               devicePushTokenId,
               status: 'ACCEPTED',
-              ...(entry.messageId ? { providerMessageId: entry.messageId } : {}),
+              ...(entry.messageId
+                ? { providerMessageId: entry.messageId }
+                : {}),
             });
           } else {
             const code = entry.error?.code;
@@ -116,7 +118,10 @@ export class FirebasePushProvider implements PushProvider, OnModuleDestroy {
         // in this chunk gets the same normalized outcome.
         const outcome = this.toSendResult(error);
         for (const target of chunk) {
-          results.push({ devicePushTokenId: target.devicePushTokenId, ...outcome });
+          results.push({
+            devicePushTokenId: target.devicePushTokenId,
+            ...outcome,
+          });
         }
       }
     }
@@ -126,9 +131,7 @@ export class FirebasePushProvider implements PushProvider, OnModuleDestroy {
 
   validateToken(rawToken: string): boolean {
     return (
-      rawToken.length >= 32 &&
-      rawToken.length <= 4_096 &&
-      !/\s/.test(rawToken)
+      rawToken.length >= 32 && rawToken.length <= 4_096 && !/\s/.test(rawToken)
     );
   }
 
@@ -183,7 +186,8 @@ export class FirebasePushProvider implements PushProvider, OnModuleDestroy {
   }): Pick<Message, 'android' | 'apns'> {
     const androidPriority = input.priority === 'HIGH' ? 'high' : 'normal';
     const apnsPriority = input.priority === 'HIGH' ? '10' : '5';
-    const expirationEpochSeconds = Math.floor(Date.now() / 1_000) + input.ttlSeconds;
+    const expirationEpochSeconds =
+      Math.floor(Date.now() / 1_000) + input.ttlSeconds;
 
     return {
       android: {
@@ -243,13 +247,19 @@ export class FirebasePushProvider implements PushProvider, OnModuleDestroy {
     if (code && PERMANENT_TOKEN_ERROR_CODES.has(code)) {
       return PushProviderError.invalidToken('firebase');
     }
-    if (code === 'messaging/quota-exceeded' || code === 'messaging/server-unavailable') {
+    if (
+      code === 'messaging/quota-exceeded' ||
+      code === 'messaging/server-unavailable'
+    ) {
       return PushProviderError.rateLimited('firebase');
     }
     const detail = error instanceof Error ? error.message : String(error);
     // Never log `detail` itself here — a firebase-admin error message can
     // include the offending token. Log only the classified code.
-    this.logger.warn({ event: 'push.firebase_request_failed', code: code ?? 'unknown' });
+    this.logger.warn({
+      event: 'push.firebase_request_failed',
+      code: code ?? 'unknown',
+    });
     return PushProviderError.unavailable('firebase', code ?? 'unknown');
   }
 

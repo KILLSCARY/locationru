@@ -97,7 +97,9 @@ class FakePrisma {
     },
   };
 
-  async $transaction<T>(callback: (transaction: this) => Promise<T>): Promise<T> {
+  async $transaction<T>(
+    callback: (transaction: this) => Promise<T>,
+  ): Promise<T> {
     return callback(this);
   }
 }

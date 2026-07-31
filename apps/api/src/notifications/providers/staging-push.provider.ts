@@ -78,7 +78,10 @@ export class StagingPushProvider implements PushProvider {
     return { healthy: true };
   }
 
-  private async store(devicePushTokenId: string | undefined, input: SendToDeviceInput) {
+  private async store(
+    devicePushTokenId: string | undefined,
+    input: SendToDeviceInput,
+  ) {
     if (devicePushTokenId) {
       await this.redis.setWithTtl(
         stagingPushLookupKey(devicePushTokenId),

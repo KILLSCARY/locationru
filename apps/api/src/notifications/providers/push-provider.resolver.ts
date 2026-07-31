@@ -30,9 +30,8 @@ export class PushProviderResolver {
   ) {}
 
   resolve(providerType: PushProviderType): PushProvider {
-    const environment = this.config.getOrThrow<AppEnvironment>(
-      'app.appEnvironment',
-    );
+    const environment =
+      this.config.getOrThrow<AppEnvironment>('app.appEnvironment');
 
     if (
       providerType === PushProviderType.DEVELOPMENT &&

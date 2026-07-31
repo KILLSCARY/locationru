@@ -11,7 +11,9 @@ describe('PushProviderResolver', () => {
     const staging =
       appEnvironment === 'production'
         ? undefined
-        : new StagingPushProvider(config, { checkConnection: async () => undefined } as never);
+        : new StagingPushProvider(config, {
+            checkConnection: async () => undefined,
+          } as never);
     const firebase = { name: 'FCM' } as never;
     const apns = { name: 'APNS' } as never;
     const resolver = new PushProviderResolver(

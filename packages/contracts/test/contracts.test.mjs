@@ -123,8 +123,14 @@ test('validates websocket envelopes and exposes the v1 contract identity', () =>
 });
 
 test('validates the full push notification manifest', () => {
-  assert.equal(NotificationTypeSchema.safeParse('DRIVER_NEW_TRIP_AVAILABLE').success, true);
-  assert.equal(NotificationTypeSchema.safeParse('MARKETING_BLAST').success, false);
+  assert.equal(
+    NotificationTypeSchema.safeParse('DRIVER_NEW_TRIP_AVAILABLE').success,
+    true,
+  );
+  assert.equal(
+    NotificationTypeSchema.safeParse('MARKETING_BLAST').success,
+    false,
+  );
   assert.equal(
     PushNotificationPayloadSchema.safeParse({
       notificationId: ids.bidId,

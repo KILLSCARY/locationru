@@ -17,7 +17,9 @@ function config() {
 
 describe('FirebasePushProvider', () => {
   it('sends a single message and returns the provider message id', async () => {
-    const send = jest.fn<() => Promise<string>>().mockResolvedValue('projects/x/messages/1');
+    const send = jest
+      .fn<() => Promise<string>>()
+      .mockResolvedValue('projects/x/messages/1');
     const provider = new FirebasePushProvider(config(), {
       messaging: { send } as never,
     });
@@ -40,13 +42,11 @@ describe('FirebasePushProvider', () => {
   });
 
   it('classifies an invalid-registration-token error as TOKEN_INVALID', async () => {
-    const send = jest
-      .fn()
-      .mockRejectedValue(
-        Object.assign(new Error('bad token'), {
-          code: 'messaging/registration-token-not-registered',
-        }),
-      );
+    const send = jest.fn().mockRejectedValue(
+      Object.assign(new Error('bad token'), {
+        code: 'messaging/registration-token-not-registered',
+      }),
+    );
     const provider = new FirebasePushProvider(config(), {
       messaging: { send } as never,
     });
@@ -67,7 +67,9 @@ describe('FirebasePushProvider', () => {
   it('classifies an unrecognized error as FAILED_TEMPORARY (retryable by default)', async () => {
     const send = jest
       .fn()
-      .mockRejectedValue(Object.assign(new Error('boom'), { code: 'messaging/internal-error' }));
+      .mockRejectedValue(
+        Object.assign(new Error('boom'), { code: 'messaging/internal-error' }),
+      );
     const provider = new FirebasePushProvider(config(), {
       messaging: { send } as never,
     });
@@ -89,7 +91,10 @@ describe('FirebasePushProvider', () => {
     const sendEachForMulticast = jest.fn().mockResolvedValue({
       responses: [
         { success: true, messageId: 'msg-1' },
-        { success: false, error: { code: 'messaging/invalid-registration-token' } },
+        {
+          success: false,
+          error: { code: 'messaging/invalid-registration-token' },
+        },
       ],
       successCount: 1,
       failureCount: 1,
@@ -100,8 +105,16 @@ describe('FirebasePushProvider', () => {
 
     const result = await provider.sendToDevices({
       targets: [
-        { devicePushTokenId: 'a', rawToken: 'a'.repeat(64), platform: 'ANDROID' as never },
-        { devicePushTokenId: 'b', rawToken: 'b'.repeat(64), platform: 'ANDROID' as never },
+        {
+          devicePushTokenId: 'a',
+          rawToken: 'a'.repeat(64),
+          platform: 'ANDROID' as never,
+        },
+        {
+          devicePushTokenId: 'b',
+          rawToken: 'b'.repeat(64),
+          platform: 'ANDROID' as never,
+        },
       ],
       title: 't',
       body: 'b',
@@ -111,7 +124,11 @@ describe('FirebasePushProvider', () => {
     });
 
     expect(result.results).toEqual([
-      { devicePushTokenId: 'a', status: 'ACCEPTED', providerMessageId: 'msg-1' },
+      {
+        devicePushTokenId: 'a',
+        status: 'ACCEPTED',
+        providerMessageId: 'msg-1',
+      },
       {
         devicePushTokenId: 'b',
         status: 'TOKEN_INVALID',
@@ -121,14 +138,16 @@ describe('FirebasePushProvider', () => {
   });
 
   it('chunks a batch larger than 500 targets into multiple multicast calls', async () => {
-    const sendEachForMulticast = jest.fn().mockImplementation(async (message: unknown) => {
-      const tokens = (message as { tokens: string[] }).tokens;
-      return {
-        responses: tokens.map(() => ({ success: true, messageId: 'msg' })),
-        successCount: tokens.length,
-        failureCount: 0,
-      };
-    });
+    const sendEachForMulticast = jest
+      .fn()
+      .mockImplementation(async (message: unknown) => {
+        const tokens = (message as { tokens: string[] }).tokens;
+        return {
+          responses: tokens.map(() => ({ success: true, messageId: 'msg' })),
+          successCount: tokens.length,
+          failureCount: 0,
+        };
+      });
     const provider = new FirebasePushProvider(config(), {
       messaging: { sendEachForMulticast } as never,
     });
@@ -156,7 +175,9 @@ describe('FirebasePushProvider', () => {
     const provider = new FirebasePushProvider(config());
     expect(provider.validateToken('a'.repeat(64))).toBe(true);
     expect(provider.validateToken('short')).toBe(false);
-    expect(provider.validateToken('has whitespace'.padEnd(64, 'x'))).toBe(false);
+    expect(provider.validateToken('has whitespace'.padEnd(64, 'x'))).toBe(
+      false,
+    );
   });
 
   it('healthCheck succeeds without a network call when credentials parse', async () => {
@@ -168,9 +189,11 @@ describe('FirebasePushProvider', () => {
 
   it('never includes the raw token in a classified error result', async () => {
     const rawToken = 'super-secret-device-token-that-must-never-leak';
-    const send = jest
-      .fn()
-      .mockRejectedValue(Object.assign(new Error(rawToken), { code: 'messaging/internal-error' }));
+    const send = jest.fn().mockRejectedValue(
+      Object.assign(new Error(rawToken), {
+        code: 'messaging/internal-error',
+      }),
+    );
     const provider = new FirebasePushProvider(config(), {
       messaging: { send } as never,
     });

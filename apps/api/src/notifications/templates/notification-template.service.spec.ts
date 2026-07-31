@@ -8,10 +8,13 @@ describe('NotificationTemplateService', () => {
   const service = new NotificationTemplateService();
 
   it('renders DRIVER_NEW_TRIP_AVAILABLE with the formatted price and a driver deep link', () => {
-    const rendered = service.render(NotificationType.DRIVER_NEW_TRIP_AVAILABLE, {
-      tripId: 'trip-1',
-      formattedPrice: formatPriceKopecks(35_000),
-    });
+    const rendered = service.render(
+      NotificationType.DRIVER_NEW_TRIP_AVAILABLE,
+      {
+        tripId: 'trip-1',
+        formattedPrice: formatPriceKopecks(35_000),
+      },
+    );
 
     expect(rendered.title).toBe('Новый заказ рядом');
     expect(rendered.body).toBe(

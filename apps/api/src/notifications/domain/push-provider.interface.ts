@@ -50,7 +50,11 @@ export interface SendToDevicesInput {
   collapseKey?: string;
 }
 
-export type SendOutcomeStatus = 'ACCEPTED' | 'TOKEN_INVALID' | 'FAILED_TEMPORARY' | 'FAILED_PERMANENT';
+export type SendOutcomeStatus =
+  | 'ACCEPTED'
+  | 'TOKEN_INVALID'
+  | 'FAILED_TEMPORARY'
+  | 'FAILED_PERMANENT';
 
 export interface SendResult {
   status: SendOutcomeStatus;

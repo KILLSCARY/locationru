@@ -1,6 +1,9 @@
 import { AppEnvironment } from '@resilient-taxi/config';
 
-import { PushPlatform, PushProviderType } from '../../generated/prisma/enums.js';
+import {
+  PushPlatform,
+  PushProviderType,
+} from '../../generated/prisma/enums.js';
 
 /**
  * Decides which PushProviderType a newly-registered device token should be
