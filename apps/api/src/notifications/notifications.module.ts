@@ -12,13 +12,15 @@ import { PushProviderResolver } from './providers/push-provider.resolver.js';
 import { StagingPushProvider } from './providers/staging-push.provider.js';
 import { NotificationOutboxService } from './notification-outbox.service.js';
 import { NotificationOutboxWorker } from './notification-outbox.worker.js';
+import { NotificationPreferenceService } from './notification-preference.service.js';
+import { NotificationPreferencesController } from './notification-preferences.controller.js';
 import { NotificationService } from './notification.service.js';
 import { DevicePushTokenRepository } from './repositories/device-push-token.repository.js';
 import { NotificationTemplateService } from './templates/notification-template.service.js';
 
 @Module({
   imports: [AuthModule],
-  controllers: [DeviceTokenController],
+  controllers: [DeviceTokenController, NotificationPreferencesController],
   providers: [
     DeviceTokenService,
     DeviceTokenRateLimitService,
@@ -28,6 +30,7 @@ import { NotificationTemplateService } from './templates/notification-template.s
     NotificationService,
     NotificationOutboxService,
     NotificationOutboxWorker,
+    NotificationPreferenceService,
     PushProviderResolver,
     DevelopmentPushProvider,
     StagingPushProvider,
@@ -40,6 +43,7 @@ import { NotificationTemplateService } from './templates/notification-template.s
     NotificationService,
     NotificationOutboxService,
     NotificationOutboxWorker,
+    NotificationPreferenceService,
     PushProviderResolver,
   ],
 })

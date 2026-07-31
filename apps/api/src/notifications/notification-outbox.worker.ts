@@ -22,8 +22,10 @@ import type {
 } from '../generated/prisma/enums.js';
 import type { SendOutcomeStatus } from './domain/push-provider.interface.js';
 import { MetricsService } from '../observability/metrics.service.js';
+import { NotificationPreferenceService } from './notification-preference.service.js';
 import { PushProviderResolver } from './providers/push-provider.resolver.js';
 import { DevicePushTokenRepository } from './repositories/device-push-token.repository.js';
+import { NotificationTemplateService } from './templates/notification-template.service.js';
 
 interface OutboxEventRow {
   id: string;
@@ -77,6 +79,8 @@ export class NotificationOutboxWorker implements OnModuleInit, OnModuleDestroy {
     private readonly devicePushTokens: DevicePushTokenRepository,
     private readonly providerResolver: PushProviderResolver,
     private readonly metrics: MetricsService,
+    private readonly preferences: NotificationPreferenceService,
+    private readonly templates: NotificationTemplateService,
   ) {}
 
   onModuleInit(): void {
@@ -163,18 +167,50 @@ export class NotificationOutboxWorker implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    const category = this.templates.categoryFor(event.type);
+    const pushEnabled = await this.preferences.isPushEnabled(
+      event.userId,
+      event.application,
+      category,
+    );
+    if (!pushEnabled) {
+      // The Notification row still exists (still shows up in the in-app
+      // inbox) — the user disabled the *push channel* for this category,
+      // not the underlying event's visibility.
+      const payload = event.payload as unknown as OutboxPayload;
+      const notification = await this.upsertNotification(event, payload);
+      await this.prisma.notification.update({
+        where: { id: notification.id },
+        data: { status: NotificationStatus.CANCELLED },
+      });
+      await this.prisma.notificationOutboxEvent.update({
+        where: { id: event.id },
+        data: {
+          status: NotificationOutboxStatus.DELIVERED,
+          processedAt: new Date(),
+          notificationId: notification.id,
+        },
+      });
+      return;
+    }
+
     try {
-      const outcome = await this.sendEvent(event);
-      if (outcome === 'DELIVERED') {
+      const result = await this.sendEvent(event);
+      if (result.outcome === 'DELIVERED') {
         await this.prisma.notificationOutboxEvent.update({
           where: { id: event.id },
           data: {
             status: NotificationOutboxStatus.DELIVERED,
             processedAt: new Date(),
+            notificationId: result.notificationId,
           },
         });
       } else {
-        await this.retryOrDeadLetter(event, outcome);
+        await this.retryOrDeadLetter(
+          event,
+          result.outcome,
+          result.notificationId,
+        );
       }
     } catch (error) {
       await this.retryOrDeadLetter(
@@ -184,10 +220,10 @@ export class NotificationOutboxWorker implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Returns 'DELIVERED' on at least one accepted send, otherwise the failure reason for retryOrDeadLetter. */
+  /** `outcome` is 'DELIVERED' on at least one accepted send, otherwise the failure reason for retryOrDeadLetter. */
   private async sendEvent(
     event: OutboxEventRow,
-  ): Promise<'DELIVERED' | string> {
+  ): Promise<{ outcome: 'DELIVERED' | string; notificationId: string }> {
     const payload = event.payload as unknown as OutboxPayload;
 
     const notification = await this.upsertNotification(event, payload);
@@ -201,7 +237,10 @@ export class NotificationOutboxWorker implements OnModuleInit, OnModuleDestroy {
         where: { id: notification.id },
         data: { status: NotificationStatus.FAILED, failedAt: new Date() },
       });
-      return 'no active device tokens for this user';
+      return {
+        outcome: 'no active device tokens for this user',
+        notificationId: notification.id,
+      };
     }
 
     const dataPayload = PushDataPayloadSchema.parse({
@@ -340,16 +379,19 @@ export class NotificationOutboxWorker implements OnModuleInit, OnModuleDestroy {
           sentAt: new Date(),
         },
       });
-      return 'DELIVERED';
+      return { outcome: 'DELIVERED', notificationId: notification.id };
     }
 
     await this.prisma.notification.update({
       where: { id: notification.id },
       data: { status: NotificationStatus.FAILED, failedAt: new Date() },
     });
-    return anyTemporaryFailure
-      ? 'temporary provider failure on every target'
-      : 'no target accepted the push (invalid tokens or permanent failure)';
+    return {
+      outcome: anyTemporaryFailure
+        ? 'temporary provider failure on every target'
+        : 'no target accepted the push (invalid tokens or permanent failure)',
+      notificationId: notification.id,
+    };
   }
 
   private async upsertNotification(
@@ -405,6 +447,7 @@ export class NotificationOutboxWorker implements OnModuleInit, OnModuleDestroy {
   private async retryOrDeadLetter(
     event: OutboxEventRow,
     reason: string,
+    notificationId?: string,
   ): Promise<void> {
     const lastError = reason.slice(0, 512);
 
@@ -415,6 +458,7 @@ export class NotificationOutboxWorker implements OnModuleInit, OnModuleDestroy {
           status: NotificationOutboxStatus.DEAD_LETTER,
           lastError,
           processedAt: new Date(),
+          ...(notificationId ? { notificationId } : {}),
         },
       });
       this.metrics.increment(
@@ -443,6 +487,7 @@ export class NotificationOutboxWorker implements OnModuleInit, OnModuleDestroy {
         status: NotificationOutboxStatus.PENDING,
         availableAt: new Date(Date.now() + jitteredSeconds * 1_000),
         lastError,
+        ...(notificationId ? { notificationId } : {}),
       },
     });
     this.metrics.increment(

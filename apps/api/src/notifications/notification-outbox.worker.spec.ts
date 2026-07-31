@@ -193,6 +193,7 @@ class FakePrisma {
 }
 
 function buildWorker(overrides?: {
+  pushEnabled?: boolean;
   targets?: Array<{
     devicePushTokenId: string;
     rawToken: string;
@@ -229,12 +230,20 @@ function buildWorker(overrides?: {
     }),
   };
   const metrics = new MetricsService();
+  const preferences = {
+    isPushEnabled: async () => overrides?.pushEnabled ?? true,
+  };
+  const templates = {
+    categoryFor: () => 'TRIP_OFFERS',
+  };
   const worker = new NotificationOutboxWorker(
     config,
     prisma as never,
     devicePushTokens as never,
     providerResolver as never,
     metrics,
+    preferences as never,
+    templates as never,
   );
   return { worker, prisma, markInvalidCalls, sendToDevicesCalls };
 }
@@ -383,6 +392,29 @@ describe('NotificationOutboxWorker', () => {
     // Still PROCESSING and not touched — its availableAt is in the future
     // so it's neither reclaimed for crash-recovery nor picked up as PENDING.
     expect(prisma.outboxRows.get(row.id)!.status).toBe('PROCESSING');
+  });
+
+  it('skips sending and cancels the Notification when the category is disabled by preference', async () => {
+    const target = {
+      devicePushTokenId: 'token-1',
+      rawToken: 'raw-1',
+      platform: 'ANDROID',
+      provider: 'FCM',
+    };
+    const { worker, prisma, sendToDevicesCalls } = buildWorker({
+      pushEnabled: false,
+      targets: [target],
+      sendResults: [{ status: 'ACCEPTED', devicePushTokenId: 'token-1' }],
+    });
+    const row = prisma.addOutboxRow();
+
+    await worker.processPending();
+
+    expect(sendToDevicesCalls).toHaveLength(0);
+    expect(prisma.outboxRows.get(row.id)!.status).toBe('DELIVERED');
+    expect(prisma.notifications.size).toBe(1);
+    const notification = [...prisma.notifications.values()][0]!;
+    expect(notification.status).toBe('CANCELLED');
   });
 
   it('reuses the existing Notification row when re-processing the same deduplicationKey', async () => {
