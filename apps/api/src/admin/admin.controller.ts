@@ -101,4 +101,22 @@ export class AdminController {
   listAudit(@Query() query: { page?: string; pageSize?: string }) {
     return this.adminService.listAudit(query);
   }
+
+  @Get('notifications/push-stats')
+  getPushStats() {
+    return this.adminService.getPushStats();
+  }
+
+  @Get('notifications/dead-letter')
+  listDeadLetterPush(@Query() query: { page?: string; pageSize?: string }) {
+    return this.adminService.listDeadLetterPush(query);
+  }
+
+  @Post('notifications/dead-letter/:eventId/retry')
+  retryDeadLetterPush(
+    @CurrentUser() admin: AuthenticatedUser,
+    @Param('eventId') eventId: string,
+  ) {
+    return this.adminService.retryDeadLetterPush(admin.id, eventId);
+  }
 }
