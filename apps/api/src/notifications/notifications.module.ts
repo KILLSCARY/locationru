@@ -10,6 +10,8 @@ import { DevelopmentPushProvider } from './providers/development-push.provider.j
 import { FirebasePushProvider } from './providers/firebase-push.provider.js';
 import { PushProviderResolver } from './providers/push-provider.resolver.js';
 import { StagingPushProvider } from './providers/staging-push.provider.js';
+import { NotificationInboxController } from './notification-inbox.controller.js';
+import { NotificationInboxService } from './notification-inbox.service.js';
 import { NotificationOutboxService } from './notification-outbox.service.js';
 import { NotificationOutboxWorker } from './notification-outbox.worker.js';
 import { NotificationPreferenceService } from './notification-preference.service.js';
@@ -20,7 +22,11 @@ import { NotificationTemplateService } from './templates/notification-template.s
 
 @Module({
   imports: [AuthModule],
-  controllers: [DeviceTokenController, NotificationPreferencesController],
+  controllers: [
+    DeviceTokenController,
+    NotificationPreferencesController,
+    NotificationInboxController,
+  ],
   providers: [
     DeviceTokenService,
     DeviceTokenRateLimitService,
@@ -31,6 +37,7 @@ import { NotificationTemplateService } from './templates/notification-template.s
     NotificationOutboxService,
     NotificationOutboxWorker,
     NotificationPreferenceService,
+    NotificationInboxService,
     PushProviderResolver,
     DevelopmentPushProvider,
     StagingPushProvider,
@@ -44,6 +51,7 @@ import { NotificationTemplateService } from './templates/notification-template.s
     NotificationOutboxService,
     NotificationOutboxWorker,
     NotificationPreferenceService,
+    NotificationInboxService,
     PushProviderResolver,
   ],
 })
