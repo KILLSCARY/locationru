@@ -8,10 +8,13 @@ import {
 import { PrismaService } from '../database/prisma.service.js';
 import {
   DriverPayoutStatus,
+  NotificationType,
   PaymentIntentStatus,
   PaymentTransactionStatus,
   PaymentTransactionType,
 } from '../generated/prisma/client.js';
+import { NotificationOutboxService } from '../notifications/notification-outbox.service.js';
+import { NotificationService } from '../notifications/notification.service.js';
 import { PAYMENT_PROVIDER, type PaymentProvider } from './payment-provider.js';
 
 @Injectable()
@@ -19,6 +22,8 @@ export class PaymentService {
   constructor(
     @Inject(PAYMENT_PROVIDER) private readonly provider: PaymentProvider,
     private readonly prisma: PrismaService,
+    private readonly notifications: NotificationService,
+    private readonly notificationOutbox: NotificationOutboxService,
   ) {}
 
   async createPayment(input: {
@@ -71,14 +76,24 @@ export class PaymentService {
       intent.amountKopecks,
       idempotencyKey,
     );
-    return this.appendTransaction(
+    const succeeded = captured.status === 'CAPTURED';
+    const transaction = await this.appendTransaction(
       intent,
       PaymentTransactionType.CAPTURE,
-      captured.status === 'CAPTURED',
+      succeeded,
       idempotencyKey,
       captured.id,
       PaymentIntentStatus.CAPTURED,
     );
+    if (!succeeded) {
+      await this.notifyTripPassenger(
+        intent.tripId,
+        intent.id,
+        NotificationType.PASSENGER_PAYMENT_FAILED,
+        `payment-capture-failed:${idempotencyKey}`,
+      );
+    }
+    return transaction;
   }
 
   async cancelPayment(intentId: string, idempotencyKey: string) {
@@ -112,14 +127,24 @@ export class PaymentService {
       intent.amountKopecks,
       idempotencyKey,
     );
-    return this.appendTransaction(
+    const succeeded = refunded.status === 'REFUNDED';
+    const transaction = await this.appendTransaction(
       intent,
       PaymentTransactionType.REFUND,
-      refunded.status === 'REFUNDED',
+      succeeded,
       idempotencyKey,
       refunded.id,
       PaymentIntentStatus.REFUNDED,
     );
+    if (succeeded) {
+      await this.notifyTripPassenger(
+        intent.tripId,
+        intent.id,
+        NotificationType.PASSENGER_REFUND_COMPLETED,
+        `refund-completed:${idempotencyKey}`,
+      );
+    }
+    return transaction;
   }
 
   async createDriverPayout(input: {
@@ -133,7 +158,8 @@ export class PaymentService {
     });
     if (existing) return existing;
     const payout = await this.provider.createDriverPayout(input);
-    return this.prisma.driverPayout.create({
+    const succeeded = payout.status === 'PAID';
+    const created = await this.prisma.driverPayout.create({
       data: {
         tripId: input.tripId,
         driverId: input.driverId,
@@ -141,12 +167,54 @@ export class PaymentService {
         providerPayoutId: payout.id,
         idempotencyKey: input.idempotencyKey,
         amountKopecks: input.amountKopecks,
-        status:
-          payout.status === 'PAID'
-            ? DriverPayoutStatus.PAID
-            : DriverPayoutStatus.FAILED,
+        status: succeeded ? DriverPayoutStatus.PAID : DriverPayoutStatus.FAILED,
       },
     });
+    const draft = this.notifications.createDraft({
+      userId: input.driverId,
+      type: succeeded
+        ? NotificationType.DRIVER_PAYOUT_COMPLETED
+        : NotificationType.DRIVER_PAYOUT_FAILED,
+      application: 'DRIVER' as never,
+      entityType: 'TRIP',
+      entityId: input.tripId,
+      idempotencyKey: `driver-payout:${input.idempotencyKey}`,
+      templateParams: { tripId: input.tripId },
+    });
+    await this.notificationOutbox.enqueue(this.prisma, draft);
+    return created;
+  }
+
+  /**
+   * Best-effort push after an already-committed payment write — see
+   * TripLifecycleService.notifyLifecycleAction for the same reasoning.
+   * entityType is PAYMENT (not TRIP) here to match the deep-link route
+   * these two notification types render (`resilienttaxi://payments/{id}`).
+   * Silently no-ops if the trip has no passenger on record (should never
+   * happen in practice).
+   */
+  private async notifyTripPassenger(
+    tripId: string,
+    paymentId: string,
+    type: NotificationType,
+    idempotencyKey: string,
+  ): Promise<void> {
+    const trip = await this.prisma.trip.findUnique({
+      where: { id: tripId },
+      select: { passengerId: true },
+    });
+    if (!trip) return;
+
+    const draft = this.notifications.createDraft({
+      userId: trip.passengerId,
+      type,
+      application: 'PASSENGER' as never,
+      entityType: 'PAYMENT',
+      entityId: paymentId,
+      idempotencyKey,
+      templateParams: { paymentId },
+    });
+    await this.notificationOutbox.enqueue(this.prisma, draft);
   }
 
   async recordCommission(input: {
