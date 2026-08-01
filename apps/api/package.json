@@ -23,7 +23,8 @@
     "db:validate": "prisma validate",
     "simulate:trip": "tsx scripts/simulate-trip.ts",
     "staging:smoke": "tsx scripts/staging-smoke.ts",
-    "staging:test:sms": "tsx scripts/staging-test-sms.ts"
+    "staging:test:sms": "tsx scripts/staging-test-sms.ts",
+    "staging:test:push": "tsx scripts/staging-test-push.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.906.0",
