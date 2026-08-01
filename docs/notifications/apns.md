@@ -28,6 +28,7 @@ push-type) на каждое сообщение (см. `firebase-push.provider.t
 ## Почему не Вариант A (прямой APNs-клиент)
 
 Прямой APNs потребовал бы:
+
 - отдельного `.p8`-ключа/сертификата и обязательного различения
   sandbox/production APNs-хостов (`api.sandbox.push.apple.com` /
   `api.push.apple.com`) — ещё один набор секретов и ещё один свитч по

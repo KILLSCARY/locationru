@@ -20,11 +20,11 @@ driver-android собирается с тремя flavor'ами, у каждог
 `applicationId` — в Firebase они регистрируются как **три отдельных
 Android-приложения** внутри одного проекта:
 
-| Flavor | applicationId | Файл `google-services.json` (заменить placeholder) |
-|---|---|---|
-| dev | `ru.location.resilienttaxi.driver.dev` | `apps/driver-android/app/src/dev/google-services.json` |
+| Flavor  | applicationId                              | Файл `google-services.json` (заменить placeholder)         |
+| ------- | ------------------------------------------ | ---------------------------------------------------------- |
+| dev     | `ru.location.resilienttaxi.driver.dev`     | `apps/driver-android/app/src/dev/google-services.json`     |
 | staging | `ru.location.resilienttaxi.driver.staging` | `apps/driver-android/app/src/staging/google-services.json` |
-| prod | `ru.location.resilienttaxi.driver` | `apps/driver-android/app/src/prod/google-services.json` |
+| prod    | `ru.location.resilienttaxi.driver`         | `apps/driver-android/app/src/prod/google-services.json`    |
 
 Для каждого: Firebase Console → Project settings → «Add app» → Android →
 указать точный `applicationId` из таблицы → скачать `google-services.json` →
@@ -112,7 +112,7 @@ Firebase-проекта.
 
 - Firebase Analytics/Crashlytics — не настраивались, они не нужны для push.
 - Rich-уведомления с изображениями/действиями (`Notification Service
-  Extension` на iOS, `BigPictureStyle` на Android) — не реализованы;
+Extension` на iOS, `BigPictureStyle` на Android) — не реализованы;
   текущий payload — только заголовок/текст/data (см. `privacy.md`).
 - Topic-based рассылка (`FirebaseMessaging.subscribeToTopic`) — намеренно не
   используется; таргетинг всегда по конкретным токенам конкретного

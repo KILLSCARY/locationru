@@ -67,11 +67,11 @@ Android-канала уведомлений. Соответствие `category 
 `FirebasePushProvider`'s `ANDROID_CHANNEL_BY_CATEGORY` и **обязано** совпадать
 с тем, что регистрируют клиенты:
 
-| Проект | Файл |
-|---|---|
-| Backend | `apps/api/src/notifications/providers/firebase-push.provider.ts` (`ANDROID_CHANNEL_BY_CATEGORY`) |
-| driver-android | `apps/driver-android/core/push/.../PushNotificationChannel.kt` |
-| passenger-mobile | `apps/passenger-mobile/src/features/notifications/push-channels-config.ts` |
+| Проект           | Файл                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------ |
+| Backend          | `apps/api/src/notifications/providers/firebase-push.provider.ts` (`ANDROID_CHANNEL_BY_CATEGORY`) |
+| driver-android   | `apps/driver-android/core/push/.../PushNotificationChannel.kt`                                   |
+| passenger-mobile | `apps/passenger-mobile/src/features/notifications/push-channels-config.ts`                       |
 
 Это критично: когда приложение свёрнуто или убито, FCM показывает
 уведомление силами ОС по `channelId` из `android.notification.channelId` —

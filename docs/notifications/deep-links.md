@@ -8,7 +8,7 @@
   `AndroidManifest.xml` регистрирует его как `ACTION_VIEW` +
   `CATEGORY_BROWSABLE` intent-filter на `MainActivity`
   (`android:launchMode="singleTask"`, `<data android:scheme="resilienttaxi"
-  android:host="driver" />`).
+android:host="driver" />`).
 - **passenger-mobile**: без выделенного хоста (`resilienttaxi://trips/...`,
   `resilienttaxi://payments/...`, `resilienttaxi://account/...`).
   `app.json` → `"scheme": ["resilienttaxi", "resilienttaxi-passenger"]`
@@ -46,14 +46,14 @@ Deep link — это только «куда перейти после откр�
 `NotificationTemplateService` (единственное место, формирующее deep link —
 клиент не может получить произвольную ссылку не из этого списка):
 
-| Deep link | Тип(ы) | Клиент | Экран |
-|---|---|---|---|
-| `driver/orders/{tripId}` | `DRIVER_NEW_TRIP_AVAILABLE` | driver-android | список заказов / карточка заказа |
-| `driver/active-trip/{tripId}` | `DRIVER_BID_ACCEPTED`, `DRIVER_PAYMENT_RESERVED`, `DRIVER_PICKUP_REMINDER` | driver-android | экран активной поездки |
-| `trips/{tripId}/bids` | `PASSENGER_BID_RECEIVED` | passenger-mobile | список предложений по поездке |
-| `trips/{tripId}` | `PASSENGER_DRIVER_SELECTED`, `_EN_ROUTE`, `_ARRIVED`, `_TRIP_STARTED`, `_TRIP_COMPLETED`, `_TRIP_CANCELLED`, `PASSENGER_PAYMENT_RESERVED` | passenger-mobile | экран поездки |
-| `payments/{paymentId}` | `PASSENGER_PAYMENT_FAILED`, `PASSENGER_REFUND_COMPLETED` | passenger-mobile | нет экрана (см. ниже) |
-| `account/security` | `SECURITY_SESSION_REVOKED` | оба | нет экрана в passenger-mobile (см. ниже) |
+| Deep link                     | Тип(ы)                                                                                                                                    | Клиент           | Экран                                    |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------- | ---------------------------------------- |
+| `driver/orders/{tripId}`      | `DRIVER_NEW_TRIP_AVAILABLE`                                                                                                               | driver-android   | список заказов / карточка заказа         |
+| `driver/active-trip/{tripId}` | `DRIVER_BID_ACCEPTED`, `DRIVER_PAYMENT_RESERVED`, `DRIVER_PICKUP_REMINDER`                                                                | driver-android   | экран активной поездки                   |
+| `trips/{tripId}/bids`         | `PASSENGER_BID_RECEIVED`                                                                                                                  | passenger-mobile | список предложений по поездке            |
+| `trips/{tripId}`              | `PASSENGER_DRIVER_SELECTED`, `_EN_ROUTE`, `_ARRIVED`, `_TRIP_STARTED`, `_TRIP_COMPLETED`, `_TRIP_CANCELLED`, `PASSENGER_PAYMENT_RESERVED` | passenger-mobile | экран поездки                            |
+| `payments/{paymentId}`        | `PASSENGER_PAYMENT_FAILED`, `PASSENGER_REFUND_COMPLETED`                                                                                  | passenger-mobile | нет экрана (см. ниже)                    |
+| `account/security`            | `SECURITY_SESSION_REVOKED`                                                                                                                | оба              | нет экрана в passenger-mobile (см. ниже) |
 
 Остальные 14 типов не несут deep link (`deepLink: () => null` в шаблоне) —
 уведомление просто открывает приложение на текущем экране.

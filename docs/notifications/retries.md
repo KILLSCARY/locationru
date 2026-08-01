@@ -57,8 +57,8 @@ if (event.attempts >= event.maxAttempts) {
 }
 
 const backoffSeconds = Math.min(
-  maxDelaySeconds,                                    // push.maxRetryDelaySeconds
-  initialDelaySeconds * 2 ** (event.attempts - 1),     // push.initialRetryDelaySeconds
+  maxDelaySeconds, // push.maxRetryDelaySeconds
+  initialDelaySeconds * 2 ** (event.attempts - 1), // push.initialRetryDelaySeconds
 );
 const jitteredSeconds = backoffSeconds * (0.5 + Math.random() * 0.5); // 50–150%
 availableAt = now + jitteredSeconds * 1000;
@@ -87,11 +87,11 @@ device tokens for this user'`) — видна в `GET
 `SendOutcomeStatus`, который возвращает `PushProvider`:
 
 | `SendOutcomeStatus` | `NotificationDeliveryStatus` |
-|---|---|
-| `ACCEPTED` | `PROVIDER_ACCEPTED` |
-| `TOKEN_INVALID` | `TOKEN_INVALID` |
-| `FAILED_TEMPORARY` | `FAILED_TEMPORARY` |
-| `FAILED_PERMANENT` | `FAILED_PERMANENT` |
+| ------------------- | ---------------------------- |
+| `ACCEPTED`          | `PROVIDER_ACCEPTED`          |
+| `TOKEN_INVALID`     | `TOKEN_INVALID`              |
+| `FAILED_TEMPORARY`  | `FAILED_TEMPORARY`           |
+| `FAILED_PERMANENT`  | `FAILED_PERMANENT`           |
 
 Событие в целом (`sendEvent()`) считается `DELIVERED`, если хотя бы одна
 доставка (на любой из активных токенов пользователя) получила `ACCEPTED` —

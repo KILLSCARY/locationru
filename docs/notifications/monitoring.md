@@ -6,20 +6,20 @@
 (`provider`/`application`/`platform`/`type` — см. `privacy.md`, «Метки
 метрик — инвариант приватности», никогда userId/телефон/токен):
 
-| Метрика | Тип | Лейблы | Где инкрементируется/выставляется |
-|---|---|---|---|
-| `notifications_created_total` | counter | `type`, `application` | `NotificationOutboxWorker.upsertNotification` — при создании строки `Notification` |
-| `notifications_queued_total` | counter | `type`, `application` | `NotificationOutboxService.enqueue` — при постановке нового события в outbox |
-| `push_send_attempts_total` | counter | `provider`, `application`, `platform`, `type`, `result` | `NotificationOutboxWorker.sendEvent` — на каждый результат отправки на каждый токен |
-| `push_provider_accepted_total` | counter | `provider`, `application` | там же — когда провайдер вернул `ACCEPTED` |
-| `push_invalid_token_total` | counter | `provider`, `application` | там же — когда провайдер вернул перманентно невалидный токен |
-| `push_retry_total` | counter | `type`, `application` | `NotificationOutboxWorker.retryOrDeadLetter` — при планировании очередной попытки |
-| `push_dead_letter_total` | counter | `type`, `application` | там же — при исчерпании `maxAttempts` |
-| `push_failed_total` | counter | `provider`, `application`, `type` | `sendEvent` — на временный или перманентный сбой отправки |
-| `push_provider_latency_ms` | gauge | `provider` | `sendEvent` — время последнего вызова `sendToDevices` в мс |
-| `push_opened_total` | counter | `application`, `type` | `NotificationInboxService` — когда клиент подтверждает открытие push (`POST /notifications/inbox/:id/opened`) |
-| `active_push_tokens` | gauge | `application`, `platform` | `NotificationOutboxWorker.refreshGauges` — количество `DevicePushToken` со статусом `ACTIVE` |
-| `notification_outbox_lag_seconds` | gauge | — | там же — возраст самой старой `PENDING` строки outbox на момент опроса |
+| Метрика                           | Тип     | Лейблы                                                  | Где инкрементируется/выставляется                                                                             |
+| --------------------------------- | ------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `notifications_created_total`     | counter | `type`, `application`                                   | `NotificationOutboxWorker.upsertNotification` — при создании строки `Notification`                            |
+| `notifications_queued_total`      | counter | `type`, `application`                                   | `NotificationOutboxService.enqueue` — при постановке нового события в outbox                                  |
+| `push_send_attempts_total`        | counter | `provider`, `application`, `platform`, `type`, `result` | `NotificationOutboxWorker.sendEvent` — на каждый результат отправки на каждый токен                           |
+| `push_provider_accepted_total`    | counter | `provider`, `application`                               | там же — когда провайдер вернул `ACCEPTED`                                                                    |
+| `push_invalid_token_total`        | counter | `provider`, `application`                               | там же — когда провайдер вернул перманентно невалидный токен                                                  |
+| `push_retry_total`                | counter | `type`, `application`                                   | `NotificationOutboxWorker.retryOrDeadLetter` — при планировании очередной попытки                             |
+| `push_dead_letter_total`          | counter | `type`, `application`                                   | там же — при исчерпании `maxAttempts`                                                                         |
+| `push_failed_total`               | counter | `provider`, `application`, `type`                       | `sendEvent` — на временный или перманентный сбой отправки                                                     |
+| `push_provider_latency_ms`        | gauge   | `provider`                                              | `sendEvent` — время последнего вызова `sendToDevices` в мс                                                    |
+| `push_opened_total`               | counter | `application`, `type`                                   | `NotificationInboxService` — когда клиент подтверждает открытие push (`POST /notifications/inbox/:id/opened`) |
+| `active_push_tokens`              | gauge   | `application`, `platform`                               | `NotificationOutboxWorker.refreshGauges` — количество `DevicePushToken` со статусом `ACTIVE`                  |
+| `notification_outbox_lag_seconds` | gauge   | —                                                       | там же — возраст самой старой `PENDING` строки outbox на момент опроса                                        |
 
 `push_send_attempts_total`/`push_failed_total` дополнительно несут лейбл
 результата/причины сбоя (`result`) — точное значение см. в
@@ -31,11 +31,11 @@
 Раздел «Push notifications» в `admin-web` использует три эндпоинта
 `AdminController`/`AdminService` (`apps/api/src/admin`):
 
-| Метод | Путь | Что возвращает |
-|---|---|---|
-| `GET` | `/admin/notifications/push-stats` | Снимок на текущий момент: `outboxByStatus` (счётчики по каждому статусу outbox), `notificationsByStatus`, `activeTokens` (по application/platform) — только агрегаты, никогда номер телефона/токен/сырой payload |
-| `GET` | `/admin/notifications/dead-letter` | Постраничный список `DEAD_LETTER`-событий: `id`, `type`, `application`, `userId`, `attempts`/`maxAttempts`, `lastError`, `createdAt`/`processedAt` |
-| `POST` | `/admin/notifications/dead-letter/:eventId/retry` | Сбрасывает `attempts` в 0, переводит строку в `PENDING`, `availableAt: now` — воркер подберёт на следующем цикле опроса. `404 PUSH_EVENT_NOT_RETRYABLE`, если событие не найдено или не в `DEAD_LETTER` |
+| Метод  | Путь                                              | Что возвращает                                                                                                                                                                                                   |
+| ------ | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/admin/notifications/push-stats`                 | Снимок на текущий момент: `outboxByStatus` (счётчики по каждому статусу outbox), `notificationsByStatus`, `activeTokens` (по application/platform) — только агрегаты, никогда номер телефона/токен/сырой payload |
+| `GET`  | `/admin/notifications/dead-letter`                | Постраничный список `DEAD_LETTER`-событий: `id`, `type`, `application`, `userId`, `attempts`/`maxAttempts`, `lastError`, `createdAt`/`processedAt`                                                               |
+| `POST` | `/admin/notifications/dead-letter/:eventId/retry` | Сбрасывает `attempts` в 0, переводит строку в `PENDING`, `availableAt: now` — воркер подберёт на следующем цикле опроса. `404 PUSH_EVENT_NOT_RETRYABLE`, если событие не найдено или не в `DEAD_LETTER`          |
 
 `getPushStats`/`listDeadLetterPush` — это снимок для человека
 («взглянуть на админку прямо сейчас»); `/metrics` — временной ряд для
@@ -58,11 +58,11 @@ push-related admin-эндпоинт (`push-stats`, список dead-letter) н�
 staging-окружения (`staging-tools.controller.ts`, весь контроллер помечен
 `@ApiExcludeController()`, не попадает в публичный Swagger):
 
-| Метод | Путь | Действие |
-|---|---|---|
-| `POST` | `/admin/staging/push/test-send` | Реальный прогон через полный outbox-пайплайн (`userId`+`application`) — но всегда через `DevelopmentPushProvider` (см. ниже), никогда в реальный FCM/APNs |
-| `GET` | `/admin/staging/push/tokens/:userId` | Список токенов конкретного пользователя (для отладки — кому реально должен был уйти push) |
-| `POST` | `/admin/staging/push/tokens/:tokenId/simulate-invalid` | Принудительно помечает токен `INVALID` — проверить путь "провайдер сказал, что токен мёртв" без реального отказа FCM |
+| Метод  | Путь                                                   | Действие                                                                                                                                                  |
+| ------ | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST` | `/admin/staging/push/test-send`                        | Реальный прогон через полный outbox-пайплайн (`userId`+`application`) — но всегда через `DevelopmentPushProvider` (см. ниже), никогда в реальный FCM/APNs |
+| `GET`  | `/admin/staging/push/tokens/:userId`                   | Список токенов конкретного пользователя (для отладки — кому реально должен был уйти push)                                                                 |
+| `POST` | `/admin/staging/push/tokens/:tokenId/simulate-invalid` | Принудительно помечает токен `INVALID` — проверить путь "провайдер сказал, что токен мёртв" без реального отказа FCM                                      |
 
 `test-send` **намеренно** не бьёт в реальный Firebase — даже в
 staging-окружении с настроенным `PUSH_PROVIDER=fcm`, чтобы прогон
@@ -71,7 +71,9 @@ staging-окружении с настроенным `PUSH_PROVIDER=fcm`, что
 задачи «никаких реальных push из CI»).
 
 ## Алерты (примеры PromQL — Prometheus/Alertmanager в этой инфраструктуре
+
 ## пока не развёрнуты, см. `docs/runbooks/otp-incident-response.md` за тем
+
 ## же дисклеймером)
 
 ```promql
