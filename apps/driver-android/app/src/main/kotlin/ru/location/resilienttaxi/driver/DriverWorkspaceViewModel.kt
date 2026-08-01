@@ -1,7 +1,6 @@
 package ru.location.resilienttaxi.driver
 
 import android.content.Context
-import android.provider.Settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -13,11 +12,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import ru.location.resilienttaxi.driver.core.network.AvailableTripResponse
 import ru.location.resilienttaxi.driver.core.network.CreateBidRequest
+import ru.location.resilienttaxi.driver.core.network.DeviceIdProvider
 import ru.location.resilienttaxi.driver.core.network.DriverApi
 import ru.location.resilienttaxi.driver.core.network.DriverBidResponse
 import ru.location.resilienttaxi.driver.core.network.RequestCodeRequest
 import ru.location.resilienttaxi.driver.core.network.ResendCodeRequest
 import ru.location.resilienttaxi.driver.core.network.VerifyCodeRequest
+import ru.location.resilienttaxi.driver.core.push.PushTokenRegistrar
 import ru.location.resilienttaxi.driver.domain.DriverSession
 import ru.location.resilienttaxi.driver.domain.OtpCode
 import ru.location.resilienttaxi.driver.domain.PhoneNumber
@@ -61,13 +62,34 @@ class DriverWorkspaceViewModel
         @ApplicationContext private val context: Context,
         private val api: DriverApi,
         private val tokenStorage: TokenStorage,
+        private val deviceIdProvider: DeviceIdProvider,
+        private val pushTokenRegistrar: PushTokenRegistrar,
     ) : ViewModel() {
         private val mutableState = MutableStateFlow<DriverUiState>(DriverUiState.Restoring)
         val state = mutableState.asStateFlow()
         private var socket: Socket? = null
 
+        // Set when a push notification tap delivers a tripId (see
+        // DriverFirebaseMessagingService's deepLink data field and
+        // MainActivity.handleIntent). Kept separate from DriverUiState since
+        // Workspace gets replaced wholesale by loadWorkspace/refreshWorkspace
+        // and a lingering "opened from a notification" banner shouldn't be
+        // lost every time that happens.
+        private val mutableDeepLinkTripId = MutableStateFlow<String?>(null)
+        val deepLinkTripId = mutableDeepLinkTripId.asStateFlow()
+
         init {
             restoreSession()
+        }
+
+        fun handleDeepLink(tripId: String?) {
+            if (tripId.isNullOrBlank()) return
+            mutableDeepLinkTripId.value = tripId
+            refreshWorkspace()
+        }
+
+        fun consumeDeepLink() {
+            mutableDeepLinkTripId.value = null
         }
 
         fun requestCode(phone: String) {
@@ -127,6 +149,7 @@ class DriverWorkspaceViewModel
                 }.onSuccess {
                     tokenStorage.save(DriverSession(it.accessToken, it.refreshToken))
                     loadWorkspace(it.accessToken)
+                    pushTokenRegistrar.registerOrRefresh()
                 }.onFailure {
                     mutableState.value = codeEntry.copy(isLoading = false, error = humanError(it))
                 }
@@ -194,6 +217,7 @@ class DriverWorkspaceViewModel
         fun signOut() {
             socket?.disconnect()
             viewModelScope.launch {
+                pushTokenRegistrar.revokeCurrent()
                 tokenStorage.clear()
                 clearActiveBid()
                 mutableState.value = DriverUiState.PhoneEntry()
@@ -215,6 +239,7 @@ class DriverWorkspaceViewModel
                 }.onSuccess {
                     tokenStorage.save(DriverSession(it.accessToken, it.refreshToken))
                     loadWorkspace(it.accessToken)
+                    pushTokenRegistrar.registerOrRefresh()
                 }.onFailure { mutableState.value = DriverUiState.PhoneEntry(error = "Сессия истекла — войдите снова") }
             }
         }
@@ -299,10 +324,7 @@ class DriverWorkspaceViewModel
                 .apply()
         }
 
-        private fun deviceId(): String {
-            val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
-            return if (androidId.isNullOrBlank()) "android-device" else androidId
-        }
+        private fun deviceId(): String = deviceIdProvider.deviceId()
 
         private companion object {
             const val PREFERENCES = "driver_workspace"

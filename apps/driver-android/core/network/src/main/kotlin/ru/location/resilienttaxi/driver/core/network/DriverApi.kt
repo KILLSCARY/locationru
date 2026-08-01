@@ -59,6 +59,19 @@ interface DriverApi {
         @Path("tripId") tripId: String,
         @Path("bidId") bidId: String,
     ): DriverBidResponse
+
+    // `application` is deliberately not a request field — the server derives
+    // PASSENGER/DRIVER from the authenticated role, matching
+    // RegisterDeviceTokenDto on the backend.
+    @POST("notifications/devices")
+    suspend fun registerDeviceToken(
+        @Body request: RegisterDeviceTokenRequest,
+    ): DeviceTokenResponse
+
+    @DELETE("notifications/devices/{id}")
+    suspend fun revokeDeviceToken(
+        @Path("id") id: String,
+    )
 }
 
 @Serializable
@@ -150,6 +163,21 @@ data class DriverBidResponse(
 @Serializable
 data class DriverLocationBatchRequest(
     val locations: List<DriverLocationUploadRequest>,
+)
+
+@Serializable
+data class RegisterDeviceTokenRequest(
+    val deviceId: String,
+    val platform: String = "ANDROID",
+    // Never logged client-side either — see PushTokenRegistrar.
+    val pushToken: String,
+    val notificationsPermission: Boolean,
+)
+
+@Serializable
+data class DeviceTokenResponse(
+    val id: String,
+    val status: String,
 )
 
 @Serializable

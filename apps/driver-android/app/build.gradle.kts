@@ -4,6 +4,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.kapt")
     id("com.google.dagger.hilt.android")
+    id("com.google.gms.google-services")
 }
 
 // Resolves the API base URL for a flavor, in order of precedence:
@@ -111,6 +112,7 @@ dependencies {
     implementation(project(":core:network"))
     implementation(project(":core:database"))
     implementation(project(":core:location"))
+    implementation(project(":core:push"))
     implementation(project(":core:maps"))
     implementation(project(":core:maps-yandex"))
     implementation(project(":core:designsystem"))

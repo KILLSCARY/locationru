@@ -15,15 +15,32 @@
         android:theme="@style/Theme.ResilientTaxiDriver">
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="resilienttaxi" android:host="driver" />
             </intent-filter>
         </activity>
         <service
             android:name="ru.location.resilienttaxi.driver.core.location.LocationForegroundService"
             android:exported="false"
             android:foregroundServiceType="location" />
+        <service
+            android:name="ru.location.resilienttaxi.driver.core.push.DriverFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="account" />
     </application>
 </manifest>

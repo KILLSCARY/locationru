@@ -9,6 +9,7 @@ plugins {
     id("com.google.dagger.hilt.android") version "2.57.2" apply false
     id("io.gitlab.arturbosch.detekt") version "1.23.8" apply false
     id("org.jlleitschuh.gradle.ktlint") version "13.1.0" apply false
+    id("com.google.gms.google-services") version "4.5.0" apply false
 }
 
 subprojects {
@@ -25,7 +26,13 @@ subprojects {
 tasks.register("unitTest") {
     group = "verification"
     description = "Runs unit tests for every Android build variant."
-    dependsOn(":app:testDevDebugUnitTest", ":app:testProdDebugUnitTest", ":domain:test", ":core:maps:test")
+    dependsOn(
+        ":app:testDevDebugUnitTest",
+        ":app:testProdDebugUnitTest",
+        ":domain:test",
+        ":core:maps:test",
+        ":core:push:test",
+    )
 }
 
 tasks.register("quality") {

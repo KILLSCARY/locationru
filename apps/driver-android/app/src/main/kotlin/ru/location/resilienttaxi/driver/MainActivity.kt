@@ -1,8 +1,14 @@
 package ru.location.resilienttaxi.driver
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,9 +44,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
@@ -61,27 +69,73 @@ private val InkMuted = Color(0xFF9B9EA6)
 private val InkLine = Color(0xFF26282E)
 private val Accent = Color(0xFF12B0FF)
 
+/** Extracts the tripId from a `resilienttaxi://driver/orders/{id}` or `resilienttaxi://driver/active-trip/{id}` deep link — null for anything else (including no data at all). */
+private fun tripIdFromIntent(intent: Intent?): String? {
+    val segments = intent?.data?.pathSegments ?: return null
+    if (segments.size < 2) return null
+    return when (segments[0]) {
+        "orders", "active-trip" -> segments[1]
+        else -> null
+    }
+}
+
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    private var pendingDeepLinkTripId: String? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingDeepLinkTripId = tripIdFromIntent(intent)
         setContent {
             ResilientTaxiTheme {
-                Surface { DriverApp() }
+                Surface { DriverApp(initialDeepLinkTripId = pendingDeepLinkTripId) }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pendingDeepLinkTripId = tripIdFromIntent(intent)
     }
 }
 
 @Composable
-private fun DriverApp(viewModel: DriverWorkspaceViewModel = hiltViewModel()) {
+private fun DriverApp(
+    initialDeepLinkTripId: String?,
+    viewModel: DriverWorkspaceViewModel = hiltViewModel(),
+) {
+    val context = LocalContext.current
+    val notificationPermissionLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+            // Result intentionally unused: PushTokenRegistrar reads the live
+            // OS permission state itself at registration time rather than
+            // trusting this callback's boolean, so a later Settings-app
+            // toggle is picked up on the next registerOrRefresh() too.
+        }
+
+    LaunchedEffect(initialDeepLinkTripId) {
+        viewModel.handleDeepLink(initialDeepLinkTripId)
+    }
+
     when (val state = viewModel.state.collectAsState().value) {
         DriverUiState.Restoring -> LoadingScreen("Восстанавливаем сессию…")
         is DriverUiState.PhoneEntry -> PhoneScreen(state, viewModel::requestCode)
         is DriverUiState.CodeEntry -> CodeScreen(state, viewModel::verifyCode, viewModel::resendCode)
-        is DriverUiState.Workspace ->
+        is DriverUiState.Workspace -> {
+            LaunchedEffect(Unit) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    val granted =
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+                            PackageManager.PERMISSION_GRANTED
+                    if (!granted) notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+            val deepLinkTripId = viewModel.deepLinkTripId.collectAsState().value
             WorkspaceScreen(
                 state = state,
+                deepLinkTripId = deepLinkTripId,
+                onDismissDeepLink = viewModel::consumeDeepLink,
                 onToggleOnline = viewModel::toggleOnline,
                 onRefresh = viewModel::refreshWorkspace,
                 onBid = viewModel::submitBid,
@@ -89,6 +143,7 @@ private fun DriverApp(viewModel: DriverWorkspaceViewModel = hiltViewModel()) {
                 onWithdraw = viewModel::withdrawBid,
                 onSignOut = viewModel::signOut,
             )
+        }
     }
 }
 
@@ -161,6 +216,8 @@ private fun maskPhone(phone: String): String =
 @Composable
 private fun WorkspaceScreen(
     state: DriverUiState.Workspace,
+    deepLinkTripId: String?,
+    onDismissDeepLink: () -> Unit,
     onToggleOnline: () -> Unit,
     onRefresh: () -> Unit,
     onBid: (AvailableTripResponse, String, Int?) -> Unit,
@@ -209,6 +266,7 @@ private fun WorkspaceScreen(
                     .padding(16.dp),
         ) {
             StatusPill(online = state.online, offline = state.isOffline)
+            deepLinkTripId?.let { tripId -> DeepLinkBanner(tripId, onDismissDeepLink) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 Button(
                     onClick = onToggleOnline,
@@ -283,6 +341,27 @@ private fun WorkspaceScreen(
             state.orders.forEach { trip ->
                 TripCard(trip, vehicleId, onBid, onSkip)
             }
+        }
+    }
+}
+
+@Composable
+private fun DeepLinkBanner(
+    tripId: String,
+    onDismiss: () -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = InkCard, contentColor = Color.White),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(14.dp),
+        ) {
+            Text("Открыто по уведомлению о поездке $tripId", color = Color.White)
+            CircleIconButton(label = "✕", onClick = onDismiss, enabled = true)
         }
     }
 }
