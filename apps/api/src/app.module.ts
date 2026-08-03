@@ -7,6 +7,7 @@ import { ConfigModule } from './config/config.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { DispatchModule } from './dispatch/dispatch.module.js';
 import { DocumentExpirationModule } from './document-expiration/document-expiration.module.js';
+import { DocumentRetentionModule } from './document-retention/document-retention.module.js';
 import { DriverDocumentsModule } from './driver-documents/driver-documents.module.js';
 import { DriverVerificationModule } from './driver-verification/driver-verification.module.js';
 import { DriversModule } from './drivers/drivers.module.js';
@@ -53,6 +54,7 @@ import { SmsWebhookModule } from './webhooks/sms-webhook.module.js';
     VehiclesModule,
     VerificationAdminModule,
     DocumentExpirationModule,
+    DocumentRetentionModule,
   ],
 })
 export class AppModule {}
