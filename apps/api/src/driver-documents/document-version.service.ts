@@ -20,7 +20,11 @@ export interface DocumentVersionRef {
 export class DocumentVersionService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async recordNewVersion(documentFamily: string, ref: DocumentVersionRef) {
+  /** `isReplacement` is true when an ACTIVE version already existed for this family — i.e. this upload is replacing a previously-decided (typically approved) document, not filling an empty slot. */
+  async recordNewVersion(
+    documentFamily: string,
+    ref: DocumentVersionRef,
+  ): Promise<{ isReplacement: boolean }> {
     const existingCount = await this.prisma.documentVersion.count({
       where: { documentFamily },
     });
@@ -29,7 +33,7 @@ export class DocumentVersionService {
       select: { id: true },
     });
 
-    return this.prisma.documentVersion.create({
+    await this.prisma.documentVersion.create({
       data: {
         documentFamily,
         versionNumber: existingCount + 1,
@@ -39,6 +43,7 @@ export class DocumentVersionService {
         ...ref,
       },
     });
+    return { isReplacement: Boolean(hasActive) };
   }
 
   /** Called by the admin approve workflow — makes `ref`'s version ACTIVE and supersedes whatever was previously ACTIVE in the same family. */

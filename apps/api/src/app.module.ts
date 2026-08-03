@@ -7,6 +7,7 @@ import { ConfigModule } from './config/config.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { DispatchModule } from './dispatch/dispatch.module.js';
 import { DriverDocumentsModule } from './driver-documents/driver-documents.module.js';
+import { DriverVerificationModule } from './driver-verification/driver-verification.module.js';
 import { DriversModule } from './drivers/drivers.module.js';
 import { FinanceModule } from './finance/finance.module.js';
 import { HealthModule } from './health/health.module.js';
@@ -36,6 +37,7 @@ import { SmsWebhookModule } from './webhooks/sms-webhook.module.js';
     TripsModule,
     DriversModule,
     DriverDocumentsModule,
+    DriverVerificationModule,
     DispatchModule,
     FinanceModule,
     LifecycleModule,

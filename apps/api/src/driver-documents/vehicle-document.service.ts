@@ -12,7 +12,10 @@ import { ConfigService } from '@nestjs/config';
 
 import { PrismaService } from '../database/prisma.service.js';
 import { DocumentProcessingPipelineService } from '../document-processing/document-processing-pipeline.service.js';
-import { DocumentStatus } from '../generated/prisma/client.js';
+import {
+  DocumentStatus,
+  VehicleVerificationStatus,
+} from '../generated/prisma/client.js';
 import { MetricsService } from '../observability/metrics.service.js';
 import {
   OBJECT_STORAGE_PROVIDER,
@@ -150,10 +153,22 @@ export class VehicleDocumentService {
         previewObjectKey: outcome.previewObjectKey,
       },
     });
-    await this.versions.recordNewVersion(
+    const { isReplacement } = await this.versions.recordNewVersion(
       `vehicle:${vehicleId}:${document.type}`,
       { vehicleDocumentId: document.id },
     );
+    if (isReplacement) {
+      // A previously-approved vehicle document is being replaced — the
+      // vehicle can no longer be considered fully verified until the new
+      // version is reviewed (Task 29 section 5/16).
+      await this.prisma.vehicle.updateMany({
+        where: {
+          id: vehicleId,
+          verificationStatus: VehicleVerificationStatus.APPROVED,
+        },
+        data: { verificationStatus: VehicleVerificationStatus.UNDER_REVIEW },
+      });
+    }
     this.metrics.increment(
       'document_upload_completed_total',
       'Documents that finished processing and reached READY_FOR_REVIEW',
