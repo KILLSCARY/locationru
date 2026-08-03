@@ -58,6 +58,7 @@ class InMemoryPrisma {
 
   readonly verificationCase = {
     findFirst: async () => this.openCase,
+    count: async () => 0,
     create: async ({ data }: { data: Record<string, unknown> }) => {
       this.createdCase = {
         id: 'case-1',

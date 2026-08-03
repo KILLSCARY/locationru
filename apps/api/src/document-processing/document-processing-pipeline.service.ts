@@ -18,6 +18,7 @@ import {
   MALWARE_SCANNER,
   type MalwareScanner,
 } from './malware-scanner.interface.js';
+import { MetricsService } from '../observability/metrics.service.js';
 import { PDF_PROCESSOR, type PdfProcessor } from './pdf-processor.interface.js';
 
 export interface ProcessableDocument {
@@ -32,7 +33,8 @@ export type ProcessingFailureReason =
   | 'MALWARE_DETECTED'
   | 'IMAGE_DECODE_FAILED'
   | 'IMAGE_TOO_SMALL'
-  | 'PDF_STRUCTURE_INVALID';
+  | 'PDF_STRUCTURE_INVALID'
+  | 'PROCESSING_ERROR';
 
 export type ProcessingOutcome =
   | {
@@ -69,9 +71,34 @@ export class DocumentProcessingPipelineService {
     @Inject(IMAGE_PROCESSOR) private readonly imageProcessor: ImageProcessor,
     @Inject(PDF_PROCESSOR) private readonly pdfProcessor: PdfProcessor,
     private readonly previewGenerator: DocumentPreviewGeneratorService,
+    private readonly metrics: MetricsService,
   ) {}
 
   async process(document: ProcessableDocument): Promise<ProcessingOutcome> {
+    try {
+      return await this.runPipeline(document);
+    } catch (error) {
+      // Distinct from document_security_failed_total (a deliberate
+      // rejection): this is the pipeline itself breaking — a storage read
+      // error, an unhandled decode exception, etc. Still fails closed
+      // (FAILED_SECURITY_CHECK), it just tells on-call something is wrong
+      // with the pipeline rather than with the uploaded file.
+      this.logger.error({
+        event: 'document_processing.unexpected_error',
+        objectKey: document.objectKey,
+        error,
+      });
+      this.metrics.increment(
+        'document_processing_failed_total',
+        'Document processing pipeline runs that failed with an unexpected error rather than a deliberate rejection',
+      );
+      return { outcome: 'FAILED_SECURITY_CHECK', reason: 'PROCESSING_ERROR' };
+    }
+  }
+
+  private async runPipeline(
+    document: ProcessableDocument,
+  ): Promise<ProcessingOutcome> {
     const fail = (reason: ProcessingFailureReason): ProcessingOutcome => {
       this.logger.warn({
         event: 'document_processing.failed',

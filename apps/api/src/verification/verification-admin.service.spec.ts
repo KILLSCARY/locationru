@@ -38,6 +38,7 @@ class InMemoryPrisma {
       status: VerificationCaseStatus.ASSIGNED,
       assignedAdminId: ADMIN_ID,
       submittedSnapshot: { vehicleId: VEHICLE_ID },
+      createdAt: new Date(),
     },
   };
   profile: Record<string, unknown> = {

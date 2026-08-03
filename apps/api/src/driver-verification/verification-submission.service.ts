@@ -28,6 +28,15 @@ const OPEN_CASE_STATUSES = [
   VerificationCaseStatus.ESCALATED,
 ];
 
+/** Mirrors the QUEUE_STATUSES list in VerificationAdminService — the population verification_queue_size reports on. */
+const QUEUE_STATUSES = [
+  VerificationCaseStatus.CREATED,
+  VerificationCaseStatus.QUEUED,
+  VerificationCaseStatus.ASSIGNED,
+  VerificationCaseStatus.IN_REVIEW,
+  VerificationCaseStatus.ESCALATED,
+];
+
 export type SubmissionBlockingReason =
   | 'PROFILE_INCOMPLETE'
   | 'REQUIRED_DRIVER_DOCUMENT_NOT_READY'
@@ -186,6 +195,15 @@ export class VerificationSubmissionService {
     this.metrics.increment(
       'driver_verification_submitted_total',
       'Driver verification submissions that opened a new VerificationCase',
+    );
+    const queueSize = await this.prisma.verificationCase.count({
+      where: { status: { in: QUEUE_STATUSES } },
+    });
+    this.metrics.setGauge(
+      'verification_queue_size',
+      'Number of VerificationCase rows currently awaiting or under admin review',
+      {},
+      queueSize,
     );
 
     return {

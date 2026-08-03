@@ -491,6 +491,8 @@ export class VerificationAdminService {
       'driver_verification_approved_total',
       'VerificationCase decisions that resulted in driver approval',
     );
+    this.recordCaseDuration(verificationCase.createdAt, 'APPROVED');
+    await this.refreshQueueSizeGauge();
     await this.notifyDriver(
       verificationCase.driverId,
       caseId,
@@ -548,6 +550,8 @@ export class VerificationAdminService {
       'driver_verification_rejected_total',
       'VerificationCase decisions that resulted in driver rejection',
     );
+    this.recordCaseDuration(verificationCase.createdAt, 'REJECTED');
+    await this.refreshQueueSizeGauge();
     await this.notifyDriver(
       verificationCase.driverId,
       caseId,
@@ -603,6 +607,7 @@ export class VerificationAdminService {
       'driver_verification_changes_requested_total',
       'VerificationCase decisions that sent the driver back for changes',
     );
+    await this.refreshQueueSizeGauge();
     // No dedicated push NotificationType exists for CHANGES_REQUESTED (only
     // DRIVER_ACCOUNT_APPROVED/REJECTED are provisioned) — the driver still
     // sees the new status and comment via GET drivers/me/profile. Adding a
@@ -678,6 +683,28 @@ export class VerificationAdminService {
         },
       );
     });
+  }
+
+  private recordCaseDuration(createdAt: Date, decision: string): void {
+    const seconds = (Date.now() - createdAt.getTime()) / 1_000;
+    this.metrics.setGauge(
+      'driver_verification_duration_seconds',
+      'Time from VerificationCase creation to a terminal decision (approve/reject)',
+      { decision },
+      seconds,
+    );
+  }
+
+  private async refreshQueueSizeGauge(): Promise<void> {
+    const size = await this.prisma.verificationCase.count({
+      where: { status: { in: QUEUE_STATUSES } },
+    });
+    this.metrics.setGauge(
+      'verification_queue_size',
+      'Number of VerificationCase rows currently awaiting or under admin review',
+      {},
+      size,
+    );
   }
 
   private snapshotVehicleId(verificationCase: {
