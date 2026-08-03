@@ -79,8 +79,9 @@ export class AdminService {
               id: true,
               brand: true,
               model: true,
-              registrationNumber: true,
+              registrationNumberMasked: true,
               status: true,
+              verificationStatus: true,
             },
           },
         },
@@ -121,7 +122,11 @@ export class AdminService {
           include: {
             driver: { include: { user: { select: { phone: true } } } },
             vehicle: {
-              select: { brand: true, model: true, registrationNumber: true },
+              select: {
+                brand: true,
+                model: true,
+                registrationNumberMasked: true,
+              },
             },
           },
         },
@@ -168,53 +173,6 @@ export class AdminService {
     ]);
 
     return this.page(items, total, pagination);
-  }
-
-  async reviewDriver(
-    adminId: string,
-    driverId: string,
-    decision: 'APPROVED' | 'REJECTED',
-  ) {
-    return this.prisma.$transaction(async (transaction) => {
-      const driver = await transaction.driverProfile.update({
-        where: { userId: driverId },
-        data: { verificationStatus: decision },
-        include: { user: { select: { phone: true } } },
-      });
-      await transaction.adminAuditLog.create({
-        data: {
-          adminId,
-          action: `DRIVER_${decision}`,
-          targetType: 'DRIVER',
-          targetId: driverId,
-          payload: { decision },
-        },
-      });
-      return driver;
-    });
-  }
-
-  async reviewVehicle(
-    adminId: string,
-    vehicleId: string,
-    decision: 'APPROVED' | 'REJECTED',
-  ) {
-    return this.prisma.$transaction(async (transaction) => {
-      const vehicle = await transaction.vehicle.update({
-        where: { id: vehicleId },
-        data: { status: decision },
-      });
-      await transaction.adminAuditLog.create({
-        data: {
-          adminId,
-          action: `VEHICLE_${decision}`,
-          targetType: 'VEHICLE',
-          targetId: vehicleId,
-          payload: { decision },
-        },
-      });
-      return vehicle;
-    });
   }
 
   async blockUser(adminId: string, userId: string) {

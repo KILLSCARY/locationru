@@ -11,16 +11,17 @@ import { ConfigService } from '@nestjs/config';
 
 import type { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../database/prisma.service.js';
+import { DriverEligibilityService } from '../drivers/driver-eligibility.service.js';
 import { FareCalculator } from '../finance/fare-calculator.service.js';
 import {
   type Prisma,
   DriverBidStatus,
-  DriverStatus,
-  DriverVerificationStatus,
+  DriverOperationalStatus,
   NotificationType,
   TripStatus,
   TripStatusActorType,
   VehicleStatus,
+  VehicleVerificationStatus,
   RealtimeEventType,
 } from '../generated/prisma/client.js';
 import { NotificationOutboxService } from '../notifications/notification-outbox.service.js';
@@ -97,6 +98,7 @@ export class BidsService {
     private readonly realtimeOutbox: RealtimeOutboxService,
     private readonly notifications: NotificationService,
     private readonly notificationOutbox: NotificationOutboxService,
+    private readonly driverEligibility: DriverEligibilityService,
   ) {}
 
   async getAvailableTrips(
@@ -354,7 +356,7 @@ export class BidsService {
             brand: true,
             model: true,
             color: true,
-            registrationNumber: true,
+            registrationNumberMasked: true,
           },
         },
       },
@@ -363,6 +365,10 @@ export class BidsService {
     return bids.map((bid) => ({
       ...bid,
       driver: { ...bid.driver, rating: Number(bid.driver.rating) },
+      vehicle: {
+        ...bid.vehicle,
+        registrationNumber: bid.vehicle.registrationNumberMasked,
+      },
     }));
   }
 
@@ -393,13 +399,20 @@ export class BidsService {
           offeredPriceKopecks: true,
           status: true,
           version: true,
-          vehicle: { select: { driverId: true, status: true } },
+          vehicle: {
+            select: {
+              driverId: true,
+              status: true,
+              verificationStatus: true,
+            },
+          },
         },
       });
       if (!bid) throw this.bidNotFound();
       if (
         bid.vehicle.driverId !== bid.driverId ||
-        bid.vehicle.status !== VehicleStatus.APPROVED
+        bid.vehicle.status !== VehicleStatus.ACTIVE ||
+        bid.vehicle.verificationStatus !== VehicleVerificationStatus.APPROVED
       ) {
         throw new ConflictException({
           code: 'BID_VEHICLE_NOT_ELIGIBLE',
@@ -591,6 +604,13 @@ export class BidsService {
     return trips[0];
   }
 
+  /**
+   * Delegates the "is this driver even allowed to be online" question to
+   * DriverEligibilityService (single source of truth, see
+   * docs/drivers/eligibility.md) — only checks specific to bid creation
+   * itself (currently ONLINE right now, this exact vehicle is theirs and
+   * approved) stay local to this method.
+   */
   private async assertEligibleDriver(
     transaction: Prisma.TransactionClient,
     driverId: string,
@@ -598,31 +618,29 @@ export class BidsService {
   ): Promise<void> {
     const profile = await transaction.driverProfile.findUnique({
       where: { userId: driverId },
-      select: {
-        status: true,
-        verificationStatus: true,
-      },
+      select: { operationalStatus: true },
     });
     if (
       !profile ||
-      profile.status !== DriverStatus.ONLINE ||
-      profile.verificationStatus !== DriverVerificationStatus.APPROVED
+      profile.operationalStatus !== DriverOperationalStatus.ONLINE
     ) {
       throw new ForbiddenException({
         code: 'DRIVER_NOT_AVAILABLE',
-        message: 'Only an approved ONLINE driver can create a bid',
+        message: 'Only an ONLINE driver can create a bid',
       });
     }
 
-    const vehicle = await transaction.vehicle.findFirst({
-      where: {
-        id: vehicleId,
-        driverId,
-        status: VehicleStatus.APPROVED,
-      },
-      select: { id: true },
-    });
-    if (!vehicle) {
+    const eligibility =
+      await this.driverEligibility.evaluateDriverEligibility(driverId);
+    if (!eligibility.eligible) {
+      throw new ForbiddenException({
+        code: 'DRIVER_NOT_AVAILABLE',
+        message: 'Only an approved, eligible driver can create a bid',
+        blockingReasons: eligibility.blockingReasons,
+      });
+    }
+
+    if (!eligibility.approvedVehicleIds.includes(vehicleId)) {
       throw new ForbiddenException({
         code: 'APPROVED_VEHICLE_REQUIRED',
         message: 'Bid requires an approved vehicle owned by the driver',

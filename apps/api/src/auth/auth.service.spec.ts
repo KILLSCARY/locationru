@@ -377,7 +377,9 @@ describe('AuthService', () => {
       role: 'DRIVER',
       status: 'ACTIVE',
     });
-    prisma.driverProfile.findUnique = async () => ({ status: 'SUSPENDED' });
+    prisma.driverProfile.findUnique = async () => ({
+      verificationStatus: 'SUSPENDED',
+    });
 
     const { requestId } = await authService.requestCode({
       phone,

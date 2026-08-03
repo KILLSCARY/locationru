@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { AuthModule } from '../auth/auth.module.js';
+import { DriversModule } from '../drivers/drivers.module.js';
 import { FinanceModule } from '../finance/finance.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
 import { RealtimeModule } from '../realtime/realtime.module.js';
@@ -8,7 +9,13 @@ import { BidsController } from './bids.controller.js';
 import { BidsService } from './bids.service.js';
 
 @Module({
-  imports: [AuthModule, FinanceModule, RealtimeModule, NotificationsModule],
+  imports: [
+    AuthModule,
+    FinanceModule,
+    RealtimeModule,
+    NotificationsModule,
+    DriversModule,
+  ],
   controllers: [BidsController],
   providers: [BidsService],
   exports: [BidsService],

@@ -1,5 +1,7 @@
 import { PrismaPg } from '@prisma/adapter-pg';
+import { ConfigService } from '@nestjs/config';
 
+import { DriverDataCryptoService } from '../src/drivers/infrastructure/driver-data-crypto.service.js';
 import { PrismaClient } from '../src/generated/prisma/client.js';
 
 const E164_PHONE_PATTERN = /^\+[1-9]\d{7,14}$/;
@@ -29,6 +31,16 @@ async function seed(): Promise<void> {
     );
   }
 
+  const crypto = new DriverDataCryptoService(
+    new ConfigService({
+      driverVerification: {
+        dataEncryptionKey: process.env.DRIVER_DATA_ENCRYPTION_KEY,
+        dataHashSecret: process.env.DRIVER_DATA_HASH_SECRET,
+      },
+    }),
+  );
+  const registrationNumberHash = crypto.hash(registrationNumber);
+
   const adapter = new PrismaPg({ connectionString });
   const prisma = new PrismaClient({ adapter });
 
@@ -41,27 +53,41 @@ async function seed(): Promise<void> {
 
     await prisma.driverProfile.upsert({
       where: { userId: user.id },
-      update: { status: 'OFFLINE', verificationStatus: 'APPROVED' },
+      update: { operationalStatus: 'OFFLINE', verificationStatus: 'APPROVED' },
       create: {
         userId: user.id,
         firstName: 'Тест',
         lastName: 'Водитель',
-        status: 'OFFLINE',
+        phone,
+        cityId: 'moscow',
+        birthDate: new Date('1990-01-01'),
+        operationalStatus: 'OFFLINE',
         verificationStatus: 'APPROVED',
+        approvedAt: new Date(),
       },
     });
 
     const vehicle = await prisma.vehicle.upsert({
-      where: { registrationNumber },
-      update: { driverId: user.id, status: 'APPROVED' },
+      where: { registrationNumberHash },
+      update: {
+        driverId: user.id,
+        status: 'ACTIVE',
+        verificationStatus: 'APPROVED',
+      },
       create: {
         driverId: user.id,
         brand: 'Kia',
         model: 'Rio',
         color: 'белый',
-        registrationNumber,
+        registrationNumberEncrypted: crypto.encrypt(registrationNumber),
+        registrationNumberMasked: `••${registrationNumber.slice(-4)}`,
+        registrationNumberHash,
         productionYear: 2021,
-        status: 'APPROVED',
+        category: 'ECONOMY',
+        seats: 4,
+        status: 'ACTIVE',
+        verificationStatus: 'APPROVED',
+        approvedAt: new Date(),
       },
     });
 

@@ -1,8 +1,19 @@
 import { createHmac, randomBytes, randomUUID } from 'node:crypto';
 
 import { PrismaPg } from '@prisma/adapter-pg';
+import { ConfigService } from '@nestjs/config';
 
+import { DriverDataCryptoService } from '../src/drivers/infrastructure/driver-data-crypto.service.js';
 import { PrismaClient } from '../src/generated/prisma/client.js';
+
+const driverDataCrypto = new DriverDataCryptoService(
+  new ConfigService({
+    driverVerification: {
+      dataEncryptionKey: process.env.DRIVER_DATA_ENCRYPTION_KEY,
+      dataHashSecret: process.env.DRIVER_DATA_HASH_SECRET,
+    },
+  }),
+);
 
 /**
  * Drives one full trip end-to-end against a running dev API, without a real
@@ -214,29 +225,41 @@ async function upsertUserAndSession(
 async function seedDriverProfile(
   prisma: PrismaClient,
   driverId: string,
+  driverPhone: string,
 ): Promise<string> {
   await prisma.driverProfile.upsert({
     where: { userId: driverId },
-    update: { status: 'OFFLINE', verificationStatus: 'APPROVED' },
+    update: { operationalStatus: 'OFFLINE', verificationStatus: 'APPROVED' },
     create: {
       userId: driverId,
       firstName: 'Симулятор',
       lastName: 'Водитель',
-      status: 'OFFLINE',
+      phone: driverPhone,
+      cityId: 'spb',
+      birthDate: new Date('1990-01-01'),
+      operationalStatus: 'OFFLINE',
       verificationStatus: 'APPROVED',
+      approvedAt: new Date(),
     },
   });
+  const registrationNumberHash = driverDataCrypto.hash('С000СИМ78');
   const vehicle = await prisma.vehicle.upsert({
-    where: { registrationNumber: 'С000СИМ78' },
-    update: { driverId, status: 'APPROVED' },
+    where: { registrationNumberHash },
+    update: { driverId, status: 'ACTIVE', verificationStatus: 'APPROVED' },
     create: {
       driverId,
       brand: 'Kia',
       model: 'Rio',
       color: 'белый',
-      registrationNumber: 'С000СИМ78',
+      registrationNumberEncrypted: driverDataCrypto.encrypt('С000СИМ78'),
+      registrationNumberMasked: '••СИМ78',
+      registrationNumberHash,
       productionYear: 2022,
-      status: 'APPROVED',
+      category: 'ECONOMY',
+      seats: 4,
+      status: 'ACTIVE',
+      verificationStatus: 'APPROVED',
+      approvedAt: new Date(),
     },
   });
   return vehicle.id;
@@ -418,7 +441,11 @@ async function main(): Promise<void> {
       role: 'DRIVER',
       deviceId: 'simulator-driver',
     });
-    const vehicleId = await seedDriverProfile(prisma, driver.userId);
+    const vehicleId = await seedDriverProfile(
+      prisma,
+      driver.userId,
+      '+79995550002',
+    );
     log('setup.ready', {
       passengerId: passenger.userId,
       driverId: driver.userId,

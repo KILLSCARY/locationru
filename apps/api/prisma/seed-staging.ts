@@ -1,5 +1,7 @@
 import { PrismaPg } from '@prisma/adapter-pg';
+import { ConfigService } from '@nestjs/config';
 
+import { DriverDataCryptoService } from '../src/drivers/infrastructure/driver-data-crypto.service.js';
 import { PrismaClient } from '../src/generated/prisma/client.js';
 import {
   STAGING_SUPER_ADMIN_PHONE,
@@ -36,6 +38,18 @@ async function seedStaging(): Promise<void> {
   if (!connectionString) {
     throw new Error('DATABASE_URL is required to seed the database');
   }
+
+  const crypto = new DriverDataCryptoService(
+    new ConfigService({
+      driverVerification: {
+        dataEncryptionKey: process.env.DRIVER_DATA_ENCRYPTION_KEY,
+        dataHashSecret: process.env.DRIVER_DATA_HASH_SECRET,
+      },
+    }),
+  );
+  const registrationNumberHash = crypto.hash(
+    STAGING_TEST_VEHICLE_REGISTRATION_NUMBER,
+  );
 
   const adapter = new PrismaPg({ connectionString });
   const prisma = new PrismaClient({ adapter });
@@ -84,28 +98,40 @@ async function seedStaging(): Promise<void> {
     await prisma.driverProfile.upsert({
       where: { userId: driver.id },
       update: {
-        status: 'OFFLINE',
+        operationalStatus: 'OFFLINE',
         verificationStatus: 'APPROVED',
       },
       create: {
         userId: driver.id,
         firstName: 'Staging',
         lastName: 'Driver',
-        status: 'OFFLINE',
+        phone: driver.phone,
+        cityId: STAGING_CITY_CODE,
+        birthDate: new Date('1990-01-01'),
+        operationalStatus: 'OFFLINE',
         verificationStatus: 'APPROVED',
+        approvedAt: new Date(),
       },
     });
     await prisma.vehicle.upsert({
-      where: { registrationNumber: STAGING_TEST_VEHICLE_REGISTRATION_NUMBER },
-      update: { status: 'APPROVED' },
+      where: { registrationNumberHash },
+      update: { status: 'ACTIVE', verificationStatus: 'APPROVED' },
       create: {
         driverId: driver.id,
         brand: 'Lada',
         model: 'Vesta',
         color: 'white',
-        registrationNumber: STAGING_TEST_VEHICLE_REGISTRATION_NUMBER,
+        registrationNumberEncrypted: crypto.encrypt(
+          STAGING_TEST_VEHICLE_REGISTRATION_NUMBER,
+        ),
+        registrationNumberMasked: `••${STAGING_TEST_VEHICLE_REGISTRATION_NUMBER.slice(-4)}`,
+        registrationNumberHash,
         productionYear: 2022,
-        status: 'APPROVED',
+        category: 'ECONOMY',
+        seats: 4,
+        status: 'ACTIVE',
+        verificationStatus: 'APPROVED',
+        approvedAt: new Date(),
       },
     });
     console.log(`Verified test driver + vehicle ready: ${driver.phone}`);

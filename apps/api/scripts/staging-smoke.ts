@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 
 import { PrismaPg } from '@prisma/adapter-pg';
+import { ConfigService } from '@nestjs/config';
 import { Redis } from 'ioredis';
 import { io, type Socket } from 'socket.io-client';
 
+import { DriverDataCryptoService } from '../src/drivers/infrastructure/driver-data-crypto.service.js';
 import { PrismaClient } from '../src/generated/prisma/client.js';
 import {
   STAGING_SUPER_ADMIN_PHONE,
@@ -278,8 +280,20 @@ async function main(): Promise<void> {
     const driverProfile = await prisma.user.findUniqueOrThrow({
       where: { phone: STAGING_TEST_DRIVER_PHONE },
     });
+    const driverDataCrypto = new DriverDataCryptoService(
+      new ConfigService({
+        driverVerification: {
+          dataEncryptionKey: process.env.DRIVER_DATA_ENCRYPTION_KEY,
+          dataHashSecret: process.env.DRIVER_DATA_HASH_SECRET,
+        },
+      }),
+    );
     const vehicle = await prisma.vehicle.findUniqueOrThrow({
-      where: { registrationNumber: STAGING_TEST_VEHICLE_REGISTRATION_NUMBER },
+      where: {
+        registrationNumberHash: driverDataCrypto.hash(
+          STAGING_TEST_VEHICLE_REGISTRATION_NUMBER,
+        ),
+      },
     });
 
     const passengerSocket = await connectRealtimeClient(passengerToken);

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 import type { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../database/prisma.service.js';
+import type { DriverEligibilityService } from '../drivers/driver-eligibility.service.js';
 import { FareCalculator } from '../finance/fare-calculator.service.js';
 import type { NotificationOutboxService } from '../notifications/notification-outbox.service.js';
 import type { NotificationService } from '../notifications/notification.service.js';
@@ -81,7 +82,11 @@ class ConcurrentBidPrisma {
       return {
         ...bid,
         driver: { commissionBasisPoints: 1_000 },
-        vehicle: { driverId: bid.driverId, status: 'APPROVED' },
+        vehicle: {
+          driverId: bid.driverId,
+          status: 'ACTIVE',
+          verificationStatus: 'APPROVED',
+        },
       };
     },
     updateMany: async (args: {
@@ -213,6 +218,15 @@ describe('BidsService concurrent selection', () => {
         enqueue: async () => undefined,
         cancelPendingForEntity: async () => undefined,
       } as unknown as NotificationOutboxService,
+      {
+        evaluateDriverEligibility: async () => ({
+          eligible: true,
+          blockingReasons: [],
+          warnings: [],
+          expiresSoon: false,
+          approvedVehicleIds: [],
+        }),
+      } as unknown as DriverEligibilityService,
     );
 
     const results = await Promise.allSettled([
@@ -301,6 +315,15 @@ describe('BidsService selection notifications', () => {
           cancelCalls.push({ type, entityId, options });
         },
       } as unknown as NotificationOutboxService,
+      {
+        evaluateDriverEligibility: async () => ({
+          eligible: true,
+          blockingReasons: [],
+          warnings: [],
+          expiresSoon: false,
+          approvedVehicleIds: [],
+        }),
+      } as unknown as DriverEligibilityService,
     );
 
     await service.select(passenger, 'trip-1', 'bid-1');

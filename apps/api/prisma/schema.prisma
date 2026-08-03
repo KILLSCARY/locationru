@@ -21,25 +21,54 @@ enum UserStatus {
   PENDING
 }
 
-enum DriverStatus {
+/**
+ * The driver's own on/off availability toggle — independent of whether they're allowed to use it at all (DriverVerificationStatus) or whether their account exists at all (User.status).
+ */
+enum DriverOperationalStatus {
   OFFLINE
   ONLINE
   BUSY
-  SUSPENDED
-}
-
-enum DriverVerificationStatus {
-  NOT_SUBMITTED
-  PENDING
-  APPROVED
-  REJECTED
-}
-
-enum VehicleStatus {
-  PENDING
-  APPROVED
-  REJECTED
   BLOCKED
+}
+
+/**
+ * The driver-partner verification lifecycle (Task 29). Distinct from
+ * DriverOperationalStatus (can they flip online right now) and from
+ * User.status (is the account itself active) — see
+ * docs/drivers/verification.md for the full state diagram.
+ */
+enum DriverVerificationStatus {
+  NOT_STARTED
+  PROFILE_INCOMPLETE
+  DOCUMENTS_REQUIRED
+  DOCUMENTS_SUBMITTED
+  UNDER_REVIEW
+  CHANGES_REQUESTED
+  APPROVED
+  REJECTED
+  SUSPENDED
+  EXPIRED
+}
+
+/**
+ * Whether this vehicle is currently usable at all — separate from whether it has passed document review (VehicleVerificationStatus).
+ */
+enum VehicleStatus {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+  ARCHIVED
+}
+
+enum VehicleVerificationStatus {
+  DRAFT
+  DOCUMENTS_REQUIRED
+  SUBMITTED
+  UNDER_REVIEW
+  CHANGES_REQUESTED
+  APPROVED
+  REJECTED
+  EXPIRED
 }
 
 enum DevicePlatform {
@@ -165,6 +194,10 @@ model User {
   notifications              Notification[]
   notificationPreferences    NotificationPreference[]
   notificationPrivacySetting NotificationPrivacySetting?
+  driverDocumentsReviewed    DriverDocument[]            @relation("DriverDocumentReviewer")
+  vehicleDocumentsReviewed   VehicleDocument[]           @relation("VehicleDocumentReviewer")
+  verificationCasesAssigned  VerificationCase[]          @relation("VerificationCaseAssignee")
+  driverConsents             DriverConsent[]
 
   @@index([role, status], map: "users_role_status_idx")
   @@index([createdAt], map: "users_created_at_idx")
@@ -197,43 +230,94 @@ model PassengerProfile {
   @@map("passenger_profiles")
 }
 
+/**
+ * The driver-partner profile (Task 29). `id` is a synthetic PK distinct from
+ * `userId` purely to match the task's literal field list — every existing
+ * relation in this schema (Vehicle.driverId, DriverBid.driverId,
+ * DispatchAttemptLog, DriverLocation, Trip.selectedDriverId, ...) continues
+ * to reference `userId` (kept `@unique`), so this adds a field without any
+ * blast radius on the rest of the schema. See docs/drivers/profile.md.
+ * `phone` mirrors User.phone (kept in sync by DriverProfileService — never
+ * editable through the profile-update endpoint; only a verified phone
+ * change flow may touch it) so a document/verification-case snapshot has a
+ * stable phone value even if it's read without a User join.
+ */
 model DriverProfile {
-  userId                String                   @id @db.Uuid
+  id                    String                   @id @default(uuid()) @db.Uuid
+  userId                String                   @unique @db.Uuid
   firstName             String                   @db.VarChar(100)
   lastName              String                   @db.VarChar(100)
-  status                DriverStatus             @default(OFFLINE)
-  verificationStatus    DriverVerificationStatus @default(NOT_SUBMITTED)
+  middleName            String?                  @db.VarChar(100)
+  birthDate             DateTime?                @db.Date
+  phone                 String                   @db.VarChar(16)
+  email                 String?                  @db.VarChar(255)
+  cityId                String                   @db.VarChar(64)
+  operationalStatus     DriverOperationalStatus  @default(OFFLINE)
+  verificationStatus    DriverVerificationStatus @default(NOT_STARTED)
   rating                Decimal                  @default(5.0) @db.Decimal(3, 2)
   completedTripsCount   Int                      @default(0)
   commissionBasisPoints Int?                     @db.SmallInt
+  profilePhotoObjectKey String?                  @db.VarChar(512)
+  submittedAt           DateTime?                @db.Timestamptz(3)
+  approvedAt            DateTime?                @db.Timestamptz(3)
+  rejectedAt            DateTime?                @db.Timestamptz(3)
+  suspendedAt           DateTime?                @db.Timestamptz(3)
+  verificationComment   String?                  @db.VarChar(1024)
   createdAt             DateTime                 @default(now()) @db.Timestamptz(3)
   updatedAt             DateTime                 @updatedAt @db.Timestamptz(3)
+  version               Int                      @default(0)
   user                  User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
   vehicles              Vehicle[]
   locations             DriverLocation[]
   dispatchAttemptLogs   DispatchAttemptLog[]
   bids                  DriverBid[]
+  documents             DriverDocument[]
+  verificationCases     VerificationCase[]
 
-  @@index([status, verificationStatus], map: "driver_profiles_status_verification_idx")
+  @@index([operationalStatus, verificationStatus], map: "driver_profiles_status_verification_idx")
   @@index([rating], map: "driver_profiles_rating_idx")
   @@map("driver_profiles")
 }
 
+/**
+ * Registration number/VIN are stored only encrypted (AES-256-GCM via
+ * DriverDataCryptoService) plus a one-way HMAC hash for uniqueness/duplicate
+ * lookups (the encrypted value can't be queried directly since encryption
+ * uses a random IV) — see docs/security/document-storage.md.
+ */
 model Vehicle {
-  id                 String        @id @default(uuid()) @db.Uuid
-  driverId           String        @db.Uuid
-  brand              String        @db.VarChar(100)
-  model              String        @db.VarChar(100)
-  color              String        @db.VarChar(50)
-  registrationNumber String        @unique(map: "vehicles_registration_number_key") @db.VarChar(32)
-  productionYear     Int           @db.SmallInt
-  status             VehicleStatus @default(PENDING)
-  driver             DriverProfile @relation(fields: [driverId], references: [userId], onDelete: Cascade)
-  selectedForTrips   Trip[]
-  bids               DriverBid[]
+  id                          String                    @id @default(uuid()) @db.Uuid
+  driverId                    String                    @db.Uuid
+  brand                       String                    @db.VarChar(100)
+  model                       String                    @db.VarChar(100)
+  color                       String                    @db.VarChar(50)
+  productionYear              Int                       @db.SmallInt
+  registrationNumberEncrypted String                    @db.VarChar(512)
+  registrationNumberMasked    String                    @db.VarChar(32)
+  registrationNumberHash      String                    @unique(map: "vehicles_registration_number_hash_key") @db.VarChar(128)
+  vinEncrypted                String?                   @db.VarChar(512)
+  vinHash                     String?                   @unique(map: "vehicles_vin_hash_key") @db.VarChar(128)
+  vinLastFour                 String?                   @db.VarChar(4)
+  category                    String                    @db.VarChar(32)
+  status                      VehicleStatus             @default(INACTIVE)
+  verificationStatus          VehicleVerificationStatus @default(DRAFT)
+  seats                       Int                       @db.SmallInt
+  childSeatAvailable          Boolean                   @default(false)
+  luggageCapacity             Int?                      @db.SmallInt
+  petAllowed                  Boolean                   @default(false)
+  createdAt                   DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt                   DateTime                  @updatedAt @db.Timestamptz(3)
+  approvedAt                  DateTime?                 @db.Timestamptz(3)
+  rejectedAt                  DateTime?                 @db.Timestamptz(3)
+  version                     Int                       @default(0)
+  driver                      DriverProfile             @relation(fields: [driverId], references: [userId], onDelete: Cascade)
+  selectedForTrips            Trip[]
+  bids                        DriverBid[]
+  documents                   VehicleDocument[]
 
   @@index([driverId, status], map: "vehicles_driver_status_idx")
   @@index([status], map: "vehicles_status_idx")
+  @@index([verificationStatus], map: "vehicles_verification_status_idx")
   @@map("vehicles")
 }
 
@@ -626,6 +710,294 @@ model StoredDocument {
 
   @@index([ownerId, createdAt], map: "stored_documents_owner_created_at_idx")
   @@map("stored_documents")
+}
+
+// ---------------------------------------------------------------------------
+// Driver/vehicle document verification (Task 29). See docs/drivers/*.md and
+// docs/security/document-*.md for the full architecture.
+// ---------------------------------------------------------------------------
+
+enum DriverDocumentType {
+  PASSPORT_MAIN_PAGE
+  PASSPORT_REGISTRATION
+  DRIVER_LICENSE_FRONT
+  DRIVER_LICENSE_BACK
+  PROFILE_PHOTO
+  SELFIE_WITH_DOCUMENT
+  TAX_STATUS_DOCUMENT
+  OTHER
+}
+
+enum VehicleDocumentType {
+  VEHICLE_REGISTRATION_FRONT
+  VEHICLE_REGISTRATION_BACK
+  INSURANCE_POLICY
+  VEHICLE_PHOTO_FRONT
+  VEHICLE_PHOTO_BACK
+  VEHICLE_PHOTO_LEFT
+  VEHICLE_PHOTO_RIGHT
+  VEHICLE_INTERIOR
+  TAXI_LICENSE_FUTURE
+  OTHER
+}
+
+/**
+ * Shared lifecycle for both DriverDocument and VehicleDocument rows.
+ */
+enum DocumentStatus {
+  UPLOADING
+  UPLOADED
+  PROCESSING
+  READY_FOR_REVIEW
+  APPROVED
+  REJECTED
+  EXPIRED
+  REVOKED
+  FAILED_SECURITY_CHECK
+}
+
+/**
+ * Centralized rejection reasons — never a free-text-only rejection, so the client can always render a specific "what to fix" message. OTHER requires rejectionComment.
+ */
+enum DocumentRejectionReasonCode {
+  DOCUMENT_UNREADABLE
+  DOCUMENT_CROPPED
+  DOCUMENT_EXPIRED
+  DOCUMENT_MISMATCH
+  WRONG_DOCUMENT_TYPE
+  PROFILE_PHOTO_MISMATCH
+  DRIVER_LICENSE_INVALID
+  VEHICLE_DATA_MISMATCH
+  VEHICLE_TOO_OLD
+  INSURANCE_EXPIRED
+  SECURITY_CHECK_FAILED
+  DUPLICATE_ACCOUNT
+  OTHER
+}
+
+/**
+ * A driver's single document "slot" for a given type. A re-upload never
+ * mutates an APPROVED row in place — it creates a new DriverDocument row and
+ * a new DocumentVersion tracking it (see DocumentVersion below), so the
+ * previously-approved document keeps gating eligibility until the
+ * replacement is itself approved.
+ */
+model DriverDocument {
+  id                      String                       @id @default(uuid()) @db.Uuid
+  driverId                String                       @db.Uuid
+  type                    DriverDocumentType
+  status                  DocumentStatus               @default(UPLOADING)
+  objectKey               String                       @unique(map: "driver_documents_object_key_key") @db.VarChar(512)
+  previewObjectKey        String?                      @db.VarChar(512)
+  fileNameSanitized       String                       @db.VarChar(255)
+  mimeType                String                       @db.VarChar(128)
+  fileSize                Int
+  documentNumberEncrypted String?                      @db.VarChar(512)
+  documentNumberHash      String?                      @db.VarChar(128)
+  documentNumberLastFour  String?                      @db.VarChar(4)
+  issuedAt                DateTime?                    @db.Date
+  expiresAt               DateTime?                    @db.Date
+  issuingCountry          String                       @default("RU") @db.VarChar(2)
+  rejectionReasonCode     DocumentRejectionReasonCode?
+  rejectionComment        String?                      @db.VarChar(1024)
+  reviewedBy              String?                      @db.Uuid
+  reviewedAt              DateTime?                    @db.Timestamptz(3)
+  createdAt               DateTime                     @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                     @updatedAt @db.Timestamptz(3)
+  version                 Int                          @default(0)
+  driver                  DriverProfile                @relation(fields: [driverId], references: [userId], onDelete: Cascade)
+  reviewer                User?                        @relation("DriverDocumentReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  documentVersions        DocumentVersion[]            @relation("DriverDocumentVersions")
+
+  @@index([driverId, type], map: "driver_documents_driver_type_idx")
+  @@index([status], map: "driver_documents_status_idx")
+  @@index([expiresAt], map: "driver_documents_expires_at_idx")
+  @@index([documentNumberHash], map: "driver_documents_number_hash_idx")
+  @@map("driver_documents")
+}
+
+model VehicleDocument {
+  id                      String                       @id @default(uuid()) @db.Uuid
+  vehicleId               String                       @db.Uuid
+  type                    VehicleDocumentType
+  status                  DocumentStatus               @default(UPLOADING)
+  objectKey               String                       @unique(map: "vehicle_documents_object_key_key") @db.VarChar(512)
+  previewObjectKey        String?                      @db.VarChar(512)
+  fileNameSanitized       String                       @db.VarChar(255)
+  mimeType                String                       @db.VarChar(128)
+  fileSize                Int
+  documentNumberEncrypted String?                      @db.VarChar(512)
+  documentNumberHash      String?                      @db.VarChar(128)
+  documentNumberLastFour  String?                      @db.VarChar(4)
+  issuedAt                DateTime?                    @db.Date
+  expiresAt               DateTime?                    @db.Date
+  issuingCountry          String                       @default("RU") @db.VarChar(2)
+  rejectionReasonCode     DocumentRejectionReasonCode?
+  rejectionComment        String?                      @db.VarChar(1024)
+  reviewedBy              String?                      @db.Uuid
+  reviewedAt              DateTime?                    @db.Timestamptz(3)
+  createdAt               DateTime                     @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                     @updatedAt @db.Timestamptz(3)
+  version                 Int                          @default(0)
+  vehicle                 Vehicle                      @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  reviewer                User?                        @relation("VehicleDocumentReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  documentVersions        DocumentVersion[]            @relation("VehicleDocumentVersions")
+
+  @@index([vehicleId, type], map: "vehicle_documents_vehicle_type_idx")
+  @@index([status], map: "vehicle_documents_status_idx")
+  @@index([expiresAt], map: "vehicle_documents_expires_at_idx")
+  @@index([documentNumberHash], map: "vehicle_documents_number_hash_idx")
+  @@map("vehicle_documents")
+}
+
+enum DocumentVersionStatus {
+  ACTIVE
+  SUPERSEDED
+}
+
+/**
+ * Version-tracking index over DriverDocument/VehicleDocument rows — the
+ * underlying rows are themselves never mutated into a "superseded" state
+ * (DocumentStatus has no such value); this table is what actually answers
+ * "which version is the currently-active one for this driver+type slot".
+ * `documentFamily` groups every version of the same logical document, e.g.
+ * `driver:<driverId>:<type>` or `vehicle:<vehicleId>:<type>`.
+ */
+model DocumentVersion {
+  id                String                @id @default(uuid()) @db.Uuid
+  documentFamily    String                @db.VarChar(160)
+  versionNumber     Int
+  status            DocumentVersionStatus @default(ACTIVE)
+  driverDocumentId  String?               @db.Uuid
+  vehicleDocumentId String?               @db.Uuid
+  createdAt         DateTime              @default(now()) @db.Timestamptz(3)
+  supersededAt      DateTime?             @db.Timestamptz(3)
+  driverDocument    DriverDocument?       @relation("DriverDocumentVersions", fields: [driverDocumentId], references: [id], onDelete: Cascade)
+  vehicleDocument   VehicleDocument?      @relation("VehicleDocumentVersions", fields: [vehicleDocumentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentFamily, versionNumber], map: "document_versions_family_version_key")
+  @@index([documentFamily, status], map: "document_versions_family_status_idx")
+  @@map("document_versions")
+}
+
+enum VerificationCaseStatus {
+  CREATED
+  QUEUED
+  ASSIGNED
+  IN_REVIEW
+  CHANGES_REQUESTED
+  APPROVED
+  REJECTED
+  CANCELLED
+  ESCALATED
+}
+
+enum VerificationCaseDecision {
+  APPROVED
+  REJECTED
+  CHANGES_REQUESTED
+}
+
+enum VerificationCasePriority {
+  NORMAL
+  HIGH
+}
+
+/**
+ * One case per verification submission attempt. `submittedSnapshot` freezes
+ * the profile/vehicle/document state at submission time for audit purposes
+ * (what the admin actually reviewed, even if the driver's live profile
+ * changes later). Application code (VerificationSubmissionService) enforces
+ * "one active case per driver" — CREATED/QUEUED/ASSIGNED/IN_REVIEW/
+ * CHANGES_REQUESTED/ESCALATED count as active; there is deliberately no DB
+ * partial-unique-index for this (would require hand-written migration SQL)
+ * — see docs/drivers/verification.md for the trade-off.
+ */
+model VerificationCase {
+  id                   String                        @id @default(uuid()) @db.Uuid
+  driverId             String                        @db.Uuid
+  status               VerificationCaseStatus        @default(CREATED)
+  submittedSnapshot    Json
+  duplicateCheckResult Json?
+  assignedAdminId      String?                       @db.Uuid
+  priority             VerificationCasePriority      @default(NORMAL)
+  createdAt            DateTime                      @default(now()) @db.Timestamptz(3)
+  assignedAt           DateTime?                     @db.Timestamptz(3)
+  reviewedAt           DateTime?                     @db.Timestamptz(3)
+  completedAt          DateTime?                     @db.Timestamptz(3)
+  decision             VerificationCaseDecision?
+  decisionReasonCodes  DocumentRejectionReasonCode[]
+  publicComment        String?                       @db.VarChar(1024)
+  internalComment      String?                       @db.VarChar(2048)
+  version              Int                           @default(0)
+  driver               DriverProfile                 @relation(fields: [driverId], references: [userId], onDelete: Cascade)
+  assignedAdmin        User?                         @relation("VerificationCaseAssignee", fields: [assignedAdminId], references: [id], onDelete: SetNull)
+
+  @@index([status], map: "verification_cases_status_idx")
+  @@index([driverId, status], map: "verification_cases_driver_status_idx")
+  @@map("verification_cases")
+}
+
+enum DriverConsentType {
+  PERSONAL_DATA_PROCESSING
+  DOCUMENT_PROCESSING
+  BIOMETRIC_PROCESSING_FUTURE
+  TERMS_OF_SERVICE
+  DRIVER_PARTNER_AGREEMENT
+}
+
+/**
+ * Real biometric processing is not implemented (Task 29 explicitly excludes it) — BIOMETRIC_PROCESSING_FUTURE exists only as a reserved value for if/when it is.
+ */
+model DriverConsent {
+  id              String            @id @default(uuid()) @db.Uuid
+  userId          String            @db.Uuid
+  consentType     DriverConsentType
+  documentVersion String            @db.VarChar(32)
+  acceptedAt      DateTime          @default(now()) @db.Timestamptz(3)
+  ipHash          String?           @db.VarChar(128)
+  deviceId        String?           @db.VarChar(255)
+  revokedAt       DateTime?         @db.Timestamptz(3)
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, consentType], map: "driver_consents_user_type_idx")
+  @@map("driver_consents")
+}
+
+enum DuplicateMatchResult {
+  NO_MATCH
+  POSSIBLE_MATCH
+  STRONG_MATCH
+  MANUAL_REVIEW_REQUIRED
+}
+
+enum DeletionQueueStatus {
+  PENDING
+  LEGAL_HOLD
+  DELETED
+  CANCELLED
+}
+
+/**
+ * Retention/deletion queue (Task 29 section 24) — nothing is ever deleted
+ * immediately on request; it is queued here and only actually deleted once
+ * `eligibleAt` has passed and status is still PENDING (never LEGAL_HOLD).
+ * The actual retention durations are configuration, not a legal
+ * determination made in code — see docs/decisions/driver-legal-requirements.md.
+ */
+model DocumentDeletionQueueEntry {
+  id              String              @id @default(uuid()) @db.Uuid
+  documentType    String              @db.VarChar(16)
+  documentId      String              @db.Uuid
+  reason          String              @db.VarChar(64)
+  eligibleAt      DateTime            @db.Timestamptz(3)
+  status          DeletionQueueStatus @default(PENDING)
+  legalHoldReason String?             @db.VarChar(255)
+  createdAt       DateTime            @default(now()) @db.Timestamptz(3)
+  processedAt     DateTime?           @db.Timestamptz(3)
+
+  @@index([status, eligibleAt], map: "document_deletion_queue_status_eligible_idx")
+  @@map("document_deletion_queue")
 }
 
 enum OtpPurpose {

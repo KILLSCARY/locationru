@@ -11,6 +11,7 @@ const KNOWN_DEMO_SECRETS = [
   'change-me-otp-hash-secret-at-least-32-chars',
   'change-me-boarding-code-secret-at-least-32-chars',
   'change-me-payment-webhook-secret',
+  'change-me-driver-data-hash-secret-at-least-32-chars',
 ];
 
 /** Marks a field required in staging/production, optional (but still validated) elsewhere. */
@@ -503,4 +504,82 @@ export const environmentValidationSchema = Joi.object({
 
   NOTIFICATION_DEFAULT_LOCALE: Joi.string().default('ru'),
   NOTIFICATION_INBOX_RETENTION_DAYS: Joi.number().integer().min(1).default(90),
+
+  // --- Driver verification (Task 29) ---
+  // Separate key material from PUSH_TOKEN_ENCRYPTION_KEY/HASH_SECRET — a
+  // registration number/VIN/document number is a different security boundary
+  // than a push token, so it gets its own secrets rather than reusing push's.
+  DRIVER_DATA_ENCRYPTION_KEY: requiredWhenDeployed(
+    Joi.string().invalid(...KNOWN_DEMO_SECRETS),
+  ),
+  DRIVER_DATA_HASH_SECRET: requiredWhenDeployed(
+    Joi.string()
+      .min(32)
+      .invalid(...KNOWN_DEMO_SECRETS),
+  ),
+  DRIVER_MINIMUM_AGE: Joi.number().integer().min(16).max(99).default(18),
+  DRIVER_VERIFICATION_ENABLED: Joi.boolean().default(true),
+  DRIVER_REAPPLY_COOLDOWN_SECONDS: Joi.number()
+    .integer()
+    .min(0)
+    .default(86_400),
+  DRIVER_MAX_ACTIVE_VEHICLES: Joi.number().integer().min(1).default(3),
+  DRIVER_REQUIRED_DOCUMENT_TYPES: Joi.string().default(
+    'PASSPORT_MAIN_PAGE,DRIVER_LICENSE_FRONT,DRIVER_LICENSE_BACK,PROFILE_PHOTO,SELFIE_WITH_DOCUMENT',
+  ),
+  VEHICLE_REQUIRED_DOCUMENT_TYPES: Joi.string().default(
+    'VEHICLE_REGISTRATION_FRONT,INSURANCE_POLICY,VEHICLE_PHOTO_FRONT,VEHICLE_PHOTO_BACK',
+  ),
+  // Empty (default) means every city is considered active — no City model
+  // exists yet in this schema, so this is a plain allow-list rather than a
+  // foreign key; see docs/drivers/eligibility.md.
+  DRIVER_ACTIVE_CITY_IDS: Joi.string().allow('').default(''),
+
+  // --- Document upload/processing pipeline (Task 29) ---
+  DOCUMENT_IMAGE_MAX_BYTES: Joi.number()
+    .integer()
+    .min(1)
+    .default(10 * 1024 * 1024),
+  DOCUMENT_PDF_MAX_BYTES: Joi.number()
+    .integer()
+    .min(1)
+    .default(15 * 1024 * 1024),
+  DOCUMENT_PDF_MAX_PAGES: Joi.number().integer().min(1).default(10),
+  DOCUMENT_IMAGE_MIN_WIDTH_PX: Joi.number().integer().min(1).default(600),
+  DOCUMENT_IMAGE_MIN_HEIGHT_PX: Joi.number().integer().min(1).default(600),
+  DOCUMENT_UPLOAD_URL_TTL_SECONDS: Joi.number().integer().min(30).default(900),
+  DOCUMENT_DOWNLOAD_URL_TTL_SECONDS: Joi.number()
+    .integer()
+    .min(30)
+    .default(300),
+  DOCUMENT_PENDING_RETENTION_HOURS: Joi.number().integer().min(1).default(24),
+
+  // Every one of these defaults to a real, non-development implementation
+  // once deployed — mirrors MAPS_PROVIDER/MAPS_ALLOW_DEVELOPMENT_IN_STAGING:
+  // staging is allowed to opt into the development scanner explicitly (for
+  // an environment with no real malware-scanning vendor wired up yet), but
+  // production can never silently treat an unscanned document as safe.
+  DOCUMENT_ALLOW_DEVELOPMENT_PIPELINE_IN_STAGING: Joi.boolean().default(false),
+  DOCUMENT_MALWARE_SCANNER: Joi.string()
+    .default('development')
+    .when('APP_ENV', {
+      is: 'production',
+      then: Joi.valid('clamav', 'external'),
+      otherwise: Joi.when('APP_ENV', {
+        is: 'staging',
+        then: Joi.when('DOCUMENT_ALLOW_DEVELOPMENT_PIPELINE_IN_STAGING', {
+          is: true,
+          then: Joi.valid('development', 'clamav', 'external'),
+          otherwise: Joi.valid('clamav', 'external'),
+        }),
+        otherwise: Joi.valid('development', 'clamav', 'external'),
+      }),
+    }),
+  DOCUMENT_FILE_TYPE_DETECTOR: Joi.string()
+    .default('development')
+    .valid('development', 'magic-bytes'),
+  DOCUMENT_PREVIEW_PROVIDER: Joi.string()
+    .default('development')
+    .valid('development', 'sharp-pdf'),
+  DOCUMENT_EXPIRATION_WARNING_DAYS: Joi.string().default('30,14,7,1'),
 });

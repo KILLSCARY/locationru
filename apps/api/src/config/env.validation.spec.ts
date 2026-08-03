@@ -22,6 +22,8 @@ const BASE_STAGING_ENV = {
   OBJECT_STORAGE_SECRET_KEY: 'a-real-secret-key',
   PUSH_TOKEN_ENCRYPTION_KEY: 'a-real-generated-push-encryption-key-32b',
   PUSH_TOKEN_HASH_SECRET: 'a-real-generated-push-hash-secret-32-plus',
+  DRIVER_DATA_ENCRYPTION_KEY: 'a-real-generated-driver-data-key-32bytes',
+  DRIVER_DATA_HASH_SECRET: 'a-real-generated-driver-data-hash-secret-32plus',
 };
 
 function validate(overrides: Record<string, unknown>) {

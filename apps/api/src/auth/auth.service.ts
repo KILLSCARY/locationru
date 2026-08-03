@@ -155,7 +155,7 @@ export class AuthService {
       const driverProfile = await this.prisma.driverProfile.findUnique({
         where: { userId: user.id },
       });
-      if (driverProfile?.status === 'SUSPENDED') {
+      if (driverProfile?.verificationStatus === 'SUSPENDED') {
         throw new ForbiddenException({
           code: 'DRIVER_SUSPENDED',
           message: 'Driver account is suspended',

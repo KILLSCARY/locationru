@@ -1,12 +1,4 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Post,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import type { AuthenticatedUser } from '../auth/auth.types.js';
@@ -15,7 +7,6 @@ import { Roles } from '../auth/decorators/roles.decorator.js';
 import { AccessTokenGuard } from '../auth/guards/access-token.guard.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
 import { AdminService } from './admin.service.js';
-import { ReviewDto } from './dto/review.dto.js';
 
 @ApiTags('admin')
 @ApiBearerAuth()
@@ -60,23 +51,13 @@ export class AdminController {
     return this.adminService.listDrivers(query);
   }
 
-  @Post('drivers/:driverId/review')
-  reviewDriver(
-    @CurrentUser() admin: AuthenticatedUser,
-    @Param('driverId') driverId: string,
-    @Body() body: ReviewDto,
-  ) {
-    return this.adminService.reviewDriver(admin.id, driverId, body.decision);
-  }
-
-  @Post('vehicles/:vehicleId/review')
-  reviewVehicle(
-    @CurrentUser() admin: AuthenticatedUser,
-    @Param('vehicleId') vehicleId: string,
-    @Body() body: ReviewDto,
-  ) {
-    return this.adminService.reviewVehicle(admin.id, vehicleId, body.decision);
-  }
+  // Driver/vehicle document review now lives entirely in the verification
+  // module (POST/GET .../admin/verification/*) — see
+  // src/verification/verification-admin.controller.ts and
+  // docs/drivers/verification.md. The old single-step "APPROVED"/"REJECTED"
+  // review endpoints are removed rather than kept alongside it: this app has
+  // never shipped to a real user base, so there is no external client
+  // depending on the old shape to preserve.
 
   @Get('trips')
   listTrips(

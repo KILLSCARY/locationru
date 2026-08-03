@@ -10,6 +10,10 @@ function parseOriginList(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+function parseIntList(value: string | undefined): number[] {
+  return parseOriginList(value).map((entry) => Number(entry));
+}
+
 /** PUSH_PROVIDER is lowercase in the env (matching SMS_PROVIDER's style); the value this returns matches the Prisma PushProviderType enum casing, since (unlike SMS) it is persisted on DevicePushToken.provider. */
 function parsePushProviderEnv(
   value: string | undefined,
@@ -219,6 +223,32 @@ export interface ApplicationConfig {
   notification: {
     defaultLocale: string;
     inboxRetentionDays: number;
+  };
+  driverVerification: {
+    dataEncryptionKey: string;
+    dataHashSecret: string;
+    minimumAge: number;
+    enabled: boolean;
+    reapplyCooldownSeconds: number;
+    maxActiveVehicles: number;
+    requiredDriverDocumentTypes: string[];
+    requiredVehicleDocumentTypes: string[];
+    /** Empty means every city is considered active. */
+    activeCityIds: string[];
+  };
+  documents: {
+    imageMaxBytes: number;
+    pdfMaxBytes: number;
+    pdfMaxPages: number;
+    imageMinWidthPx: number;
+    imageMinHeightPx: number;
+    uploadUrlTtlSeconds: number;
+    downloadUrlTtlSeconds: number;
+    pendingRetentionHours: number;
+    malwareScanner: 'development' | 'clamav' | 'external';
+    fileTypeDetector: 'development' | 'magic-bytes';
+    previewProvider: 'development' | 'sharp-pdf';
+    expirationWarningDays: number[];
   };
 }
 
@@ -514,6 +544,52 @@ export default (): ApplicationConfig => ({
     defaultLocale: process.env.NOTIFICATION_DEFAULT_LOCALE ?? 'ru',
     inboxRetentionDays: Number(
       process.env.NOTIFICATION_INBOX_RETENTION_DAYS ?? 90,
+    ),
+  },
+  driverVerification: {
+    dataEncryptionKey: process.env.DRIVER_DATA_ENCRYPTION_KEY ?? '',
+    dataHashSecret: process.env.DRIVER_DATA_HASH_SECRET ?? '',
+    minimumAge: Number(process.env.DRIVER_MINIMUM_AGE ?? 18),
+    enabled: process.env.DRIVER_VERIFICATION_ENABLED !== 'false',
+    reapplyCooldownSeconds: Number(
+      process.env.DRIVER_REAPPLY_COOLDOWN_SECONDS ?? 86_400,
+    ),
+    maxActiveVehicles: Number(process.env.DRIVER_MAX_ACTIVE_VEHICLES ?? 3),
+    requiredDriverDocumentTypes: parseOriginList(
+      process.env.DRIVER_REQUIRED_DOCUMENT_TYPES ??
+        'PASSPORT_MAIN_PAGE,DRIVER_LICENSE_FRONT,DRIVER_LICENSE_BACK,PROFILE_PHOTO,SELFIE_WITH_DOCUMENT',
+    ),
+    requiredVehicleDocumentTypes: parseOriginList(
+      process.env.VEHICLE_REQUIRED_DOCUMENT_TYPES ??
+        'VEHICLE_REGISTRATION_FRONT,INSURANCE_POLICY,VEHICLE_PHOTO_FRONT,VEHICLE_PHOTO_BACK',
+    ),
+    activeCityIds: parseOriginList(process.env.DRIVER_ACTIVE_CITY_IDS),
+  },
+  documents: {
+    imageMaxBytes: Number(
+      process.env.DOCUMENT_IMAGE_MAX_BYTES ?? 10 * 1024 * 1024,
+    ),
+    pdfMaxBytes: Number(process.env.DOCUMENT_PDF_MAX_BYTES ?? 15 * 1024 * 1024),
+    pdfMaxPages: Number(process.env.DOCUMENT_PDF_MAX_PAGES ?? 10),
+    imageMinWidthPx: Number(process.env.DOCUMENT_IMAGE_MIN_WIDTH_PX ?? 600),
+    imageMinHeightPx: Number(process.env.DOCUMENT_IMAGE_MIN_HEIGHT_PX ?? 600),
+    uploadUrlTtlSeconds: Number(
+      process.env.DOCUMENT_UPLOAD_URL_TTL_SECONDS ?? 900,
+    ),
+    downloadUrlTtlSeconds: Number(
+      process.env.DOCUMENT_DOWNLOAD_URL_TTL_SECONDS ?? 300,
+    ),
+    pendingRetentionHours: Number(
+      process.env.DOCUMENT_PENDING_RETENTION_HOURS ?? 24,
+    ),
+    malwareScanner: (process.env.DOCUMENT_MALWARE_SCANNER ??
+      'development') as ApplicationConfig['documents']['malwareScanner'],
+    fileTypeDetector: (process.env.DOCUMENT_FILE_TYPE_DETECTOR ??
+      'development') as ApplicationConfig['documents']['fileTypeDetector'],
+    previewProvider: (process.env.DOCUMENT_PREVIEW_PROVIDER ??
+      'development') as ApplicationConfig['documents']['previewProvider'],
+    expirationWarningDays: parseIntList(
+      process.env.DOCUMENT_EXPIRATION_WARNING_DAYS ?? '30,14,7,1',
     ),
   },
 });
