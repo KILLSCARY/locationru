@@ -14,3 +14,8 @@ process.env.PUSH_TOKEN_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString(
 );
 process.env.PUSH_TOKEN_HASH_SECRET ??=
   'test-push-token-hash-secret-that-is-at-least-32-characters';
+process.env.DRIVER_DATA_ENCRYPTION_KEY ??= Buffer.alloc(32, 9).toString(
+  'base64',
+);
+process.env.DRIVER_DATA_HASH_SECRET ??=
+  'test-driver-data-hash-secret-that-is-at-least-32-characters';

@@ -21,6 +21,7 @@ import { RealtimeModule } from './realtime/realtime.module.js';
 import { StagingToolsModule } from './staging-tools/staging-tools.module.js';
 import { StorageModule } from './storage/storage.module.js';
 import { TripsModule } from './trips/trips.module.js';
+import { VehiclesModule } from './vehicles/vehicles.module.js';
 import { SmsWebhookModule } from './webhooks/sms-webhook.module.js';
 
 @Module({
@@ -47,6 +48,7 @@ import { SmsWebhookModule } from './webhooks/sms-webhook.module.js';
     StagingToolsModule,
     SmsWebhookModule,
     NotificationsModule,
+    VehiclesModule,
   ],
 })
 export class AppModule {}
