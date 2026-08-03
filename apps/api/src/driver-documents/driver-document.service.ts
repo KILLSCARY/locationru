@@ -15,6 +15,7 @@ import { DocumentProcessingPipelineService } from '../document-processing/docume
 import {
   DocumentStatus,
   DriverVerificationStatus,
+  VerificationCaseStatus,
 } from '../generated/prisma/client.js';
 import { MetricsService } from '../observability/metrics.service.js';
 import {
@@ -30,6 +31,16 @@ import { DocumentVersionService } from './document-version.service.js';
 import type { RequestDriverDocumentUploadUrlDto } from './dto/request-document-upload-url.dto.js';
 
 const DOWNLOAD_SHORT_TTL_SECONDS = 60;
+
+/** Mirrors the OPEN_CASE_STATUSES list in VerificationSubmissionService — see the VerificationCase model comment in schema.prisma. */
+const OPEN_CASE_STATUSES = [
+  VerificationCaseStatus.CREATED,
+  VerificationCaseStatus.QUEUED,
+  VerificationCaseStatus.ASSIGNED,
+  VerificationCaseStatus.IN_REVIEW,
+  VerificationCaseStatus.CHANGES_REQUESTED,
+  VerificationCaseStatus.ESCALATED,
+];
 
 /**
  * Driver document upload/confirm/list/get/delete (Task 29 section 10).
@@ -222,6 +233,19 @@ export class DriverDocumentService {
         message:
           'An approved document cannot be deleted — upload a replacement to start a new review instead',
       });
+    }
+    if (document.status === DocumentStatus.READY_FOR_REVIEW) {
+      const openCase = await this.prisma.verificationCase.findFirst({
+        where: { driverId, status: { in: OPEN_CASE_STATUSES } },
+        select: { id: true },
+      });
+      if (openCase) {
+        throw new ConflictException({
+          code: 'DOCUMENT_LOCKED_UNDER_REVIEW',
+          message:
+            'This document is part of an open verification case and cannot be deleted while it is under review',
+        });
+      }
     }
 
     await this.prisma.$transaction([
