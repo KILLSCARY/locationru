@@ -249,6 +249,7 @@ export interface ApplicationConfig {
     fileTypeDetector: 'development' | 'magic-bytes';
     previewProvider: 'development' | 'sharp-pdf';
     expirationWarningDays: number[];
+    expirationCheckIntervalMs: number;
   };
 }
 
@@ -590,6 +591,9 @@ export default (): ApplicationConfig => ({
       'development') as ApplicationConfig['documents']['previewProvider'],
     expirationWarningDays: parseIntList(
       process.env.DOCUMENT_EXPIRATION_WARNING_DAYS ?? '30,14,7,1',
+    ),
+    expirationCheckIntervalMs: Number(
+      process.env.DOCUMENT_EXPIRATION_CHECK_INTERVAL_MS ?? 3_600_000,
     ),
   },
 });

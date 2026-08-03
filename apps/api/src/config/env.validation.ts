@@ -582,4 +582,8 @@ export const environmentValidationSchema = Joi.object({
     .default('development')
     .valid('development', 'sharp-pdf'),
   DOCUMENT_EXPIRATION_WARNING_DAYS: Joi.string().default('30,14,7,1'),
+  DOCUMENT_EXPIRATION_CHECK_INTERVAL_MS: Joi.number()
+    .integer()
+    .min(60_000)
+    .default(3_600_000),
 });
