@@ -83,6 +83,8 @@ export default async function AdminPage({
         {' · '}
         <Link href="/push-monitoring">Push-уведомления</Link>
         {' · '}
+        <Link href="/driver-verification">Верификация водителей</Link>
+        {' · '}
         <Link href="/staging">Staging tools</Link> (только staging +
         SUPER_ADMIN).
       </p>
@@ -170,32 +172,14 @@ export default async function AdminPage({
                   {driver.vehicles.map((vehicle) => (
                     <div key={vehicle.id}>
                       {vehicle.brand} {vehicle.model} (
-                      {vehicle.registrationNumber}) — {vehicle.status}{' '}
-                      {vehicle.status === 'PENDING' && (
-                        <DangerAction
-                          label="Подтвердить авто"
-                          path={`vehicles/${vehicle.id}/review`}
-                          body={{ decision: 'APPROVED' }}
-                        />
-                      )}
+                      {vehicle.registrationNumber}) — {vehicle.status}
                     </div>
                   ))}
                 </td>
                 <td>
-                  {driver.verificationStatus !== 'APPROVED' && (
-                    <DangerAction
-                      label="Подтвердить"
-                      path={`drivers/${driver.userId}/review`}
-                      body={{ decision: 'APPROVED' }}
-                    />
-                  )}
-                  {driver.verificationStatus !== 'REJECTED' && (
-                    <DangerAction
-                      label="Отклонить"
-                      path={`drivers/${driver.userId}/review`}
-                      body={{ decision: 'REJECTED' }}
-                    />
-                  )}
+                  <Link href="/driver-verification">
+                    Верификация и документы →
+                  </Link>
                 </td>
               </tr>
             ))}
