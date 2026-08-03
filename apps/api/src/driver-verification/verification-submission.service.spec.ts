@@ -13,6 +13,7 @@ import {
 } from '../generated/prisma/client.js';
 import { MetricsService } from '../observability/metrics.service.js';
 import { DriverConsentService } from './driver-consent.service.js';
+import type { DriverDuplicateDetectionService } from './driver-duplicate-detection.service.js';
 import { VerificationSubmissionService } from './verification-submission.service.js';
 
 const DRIVER_ID = '00000000-0000-4000-8000-000000000010';
@@ -144,10 +145,18 @@ describe('VerificationSubmissionService', () => {
     prisma = new InMemoryPrisma();
     consents = new FakeConsentService();
     metrics = new MetricsService();
+    const fakeDuplicateDetection = {
+      checkForDuplicates: async () => ({
+        result: 'NO_MATCH',
+        matches: [],
+        checkedAt: new Date().toISOString(),
+      }),
+    } as unknown as DriverDuplicateDetectionService;
     service = new VerificationSubmissionService(
       CONFIG,
       prisma as unknown as PrismaService,
       consents as unknown as DriverConsentService,
+      fakeDuplicateDetection,
       metrics,
     );
   });

@@ -3,18 +3,20 @@ import { ConfigService } from '@nestjs/config';
 
 import { PrismaService } from '../database/prisma.service.js';
 import {
-  DriverConsentService,
-  REQUIRED_CONSENT_TYPES,
-} from './driver-consent.service.js';
-import {
   DocumentStatus,
   DocumentVersionStatus,
   DriverVerificationStatus,
   VehicleStatus,
   VehicleVerificationStatus,
+  VerificationCasePriority,
   VerificationCaseStatus,
 } from '../generated/prisma/client.js';
 import { MetricsService } from '../observability/metrics.service.js';
+import {
+  DriverConsentService,
+  REQUIRED_CONSENT_TYPES,
+} from './driver-consent.service.js';
+import { DriverDuplicateDetectionService } from './driver-duplicate-detection.service.js';
 
 /** Case statuses where a driver may not submit a second time — see the VerificationCase model comment in schema.prisma. */
 const OPEN_CASE_STATUSES = [
@@ -45,6 +47,7 @@ export class VerificationSubmissionService {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly consents: DriverConsentService,
+    private readonly duplicateDetection: DriverDuplicateDetectionService,
     private readonly metrics: MetricsService,
   ) {}
 
@@ -148,12 +151,23 @@ export class VerificationSubmissionService {
       requiredVehicleDocumentTypes: requiredVehicleTypes,
     };
 
+    // Never blocks submission itself — only informs the admin queue (Task
+    // 29 section 19/20: a duplicate signal never auto-blocks on its own).
+    const duplicateCheckResult =
+      await this.duplicateDetection.checkForDuplicates(driverId);
+
     const verificationCase = await this.prisma.$transaction(async (tx) => {
       const createdCase = await tx.verificationCase.create({
         data: {
           driverId,
           status: VerificationCaseStatus.QUEUED,
           submittedSnapshot: snapshot,
+          duplicateCheckResult: duplicateCheckResult as never,
+          priority:
+            duplicateCheckResult.result === 'MANUAL_REVIEW_REQUIRED' ||
+            duplicateCheckResult.result === 'STRONG_MATCH'
+              ? VerificationCasePriority.HIGH
+              : VerificationCasePriority.NORMAL,
         },
       });
       await tx.driverProfile.update({
