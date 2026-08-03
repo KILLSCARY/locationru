@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service.js';
 import {
   DocumentStatus,
+  DocumentVersionStatus,
   DriverVerificationStatus,
   PushApplication,
   PushTokenStatus,
@@ -66,10 +67,6 @@ export class DriverEligibilityService {
           },
           select: { id: true },
         },
-        documents: {
-          where: { status: DocumentStatus.APPROVED },
-          select: { type: true, expiresAt: true },
-        },
       },
     });
 
@@ -110,11 +107,35 @@ export class DriverEligibilityService {
     );
     const soonestWindowMs = Math.max(0, ...warningDays) * 86_400_000;
 
+    // A document family's ACTIVE version is only "in force" once its
+    // underlying row is actually APPROVED — recordNewVersion marks a
+    // family's first-ever upload ACTIVE immediately (nothing to protect
+    // yet), even before an admin has reviewed it, so ACTIVE alone doesn't
+    // imply approved. See DocumentVersionService/docs/drivers/documents.md.
     const requiredDriverTypes = this.config.getOrThrow<string[]>(
       'driverVerification.requiredDriverDocumentTypes',
     );
+    const activeDriverVersions = await this.prisma.documentVersion.findMany({
+      where: {
+        status: DocumentVersionStatus.ACTIVE,
+        documentFamily: {
+          in: requiredDriverTypes.map((type) => `driver:${driverId}:${type}`),
+        },
+      },
+      include: {
+        driverDocument: {
+          select: { type: true, status: true, expiresAt: true },
+        },
+      },
+    });
     const approvedByType = new Map(
-      profile.documents.map((doc) => [doc.type, doc]),
+      activeDriverVersions
+        .map((version) => version.driverDocument)
+        .filter(
+          (doc): doc is NonNullable<typeof doc> =>
+            doc !== null && doc.status === DocumentStatus.APPROVED,
+        )
+        .map((doc) => [doc.type, doc]),
     );
     for (const type of requiredDriverTypes) {
       const doc = approvedByType.get(type as never);
@@ -136,16 +157,35 @@ export class DriverEligibilityService {
       const requiredVehicleTypes = this.config.getOrThrow<string[]>(
         'driverVerification.requiredVehicleDocumentTypes',
       );
-      const vehicleDocuments = await this.prisma.vehicleDocument.findMany({
+      const families = approvedVehicleIds.flatMap((vehicleId) =>
+        requiredVehicleTypes.map((type) => `vehicle:${vehicleId}:${type}`),
+      );
+      const activeVehicleVersions = await this.prisma.documentVersion.findMany({
         where: {
-          vehicleId: { in: approvedVehicleIds },
-          status: DocumentStatus.APPROVED,
+          status: DocumentVersionStatus.ACTIVE,
+          documentFamily: { in: families },
         },
-        select: { vehicleId: true, type: true, expiresAt: true },
+        include: {
+          vehicleDocument: {
+            select: {
+              vehicleId: true,
+              type: true,
+              status: true,
+              expiresAt: true,
+            },
+          },
+        },
       });
+      const approvedVehicleDocs = activeVehicleVersions
+        .map((version) => version.vehicleDocument)
+        .filter(
+          (doc): doc is NonNullable<typeof doc> =>
+            doc !== null && doc.status === DocumentStatus.APPROVED,
+        );
+
       for (const vehicleId of approvedVehicleIds) {
         const byType = new Map(
-          vehicleDocuments
+          approvedVehicleDocs
             .filter((doc) => doc.vehicleId === vehicleId)
             .map((doc) => [doc.type, doc]),
         );

@@ -851,8 +851,12 @@ model VehicleDocument {
 }
 
 enum DocumentVersionStatus {
+  /** The version currently counted for eligibility/display — exactly one per documentFamily. */
   ACTIVE
+  /** Was ACTIVE until a later version was approved and took over. */
   SUPERSEDED
+  /** Uploaded but not yet (or no longer, e.g. rejected) the decided version — see docs/drivers/documents.md. */
+  PENDING_REVIEW
 }
 
 /**
@@ -867,7 +871,7 @@ model DocumentVersion {
   id                String                @id @default(uuid()) @db.Uuid
   documentFamily    String                @db.VarChar(160)
   versionNumber     Int
-  status            DocumentVersionStatus @default(ACTIVE)
+  status            DocumentVersionStatus @default(PENDING_REVIEW)
   driverDocumentId  String?               @db.Uuid
   vehicleDocumentId String?               @db.Uuid
   createdAt         DateTime              @default(now()) @db.Timestamptz(3)
