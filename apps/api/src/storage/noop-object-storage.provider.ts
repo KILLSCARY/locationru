@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import type {
+  MovedObject,
   ObjectMetadata,
   ObjectStorageProvider,
   PresignedUrl,
@@ -35,6 +36,42 @@ export class NoopObjectStorageProvider implements ObjectStorageProvider {
   }
 
   async checkConnection(): Promise<void> {
+    this.throwNotConfigured();
+  }
+
+  async createDocumentUploadUrl(): Promise<PresignedUrl> {
+    this.throwNotConfigured();
+  }
+
+  async confirmDocumentUpload(): Promise<ObjectMetadata | null> {
+    this.throwNotConfigured();
+  }
+
+  async createSecureDownloadUrl(): Promise<PresignedUrl> {
+    this.throwNotConfigured();
+  }
+
+  async deletePendingDocument(): Promise<void> {
+    this.throwNotConfigured();
+  }
+
+  async moveToQuarantine(): Promise<MovedObject> {
+    this.throwNotConfigured();
+  }
+
+  async moveToVerifiedStorage(): Promise<MovedObject> {
+    this.throwNotConfigured();
+  }
+
+  async getMetadata(): Promise<ObjectMetadata | null> {
+    this.throwNotConfigured();
+  }
+
+  async downloadObject(): Promise<Buffer> {
+    this.throwNotConfigured();
+  }
+
+  async uploadObject(): Promise<void> {
     this.throwNotConfigured();
   }
 
