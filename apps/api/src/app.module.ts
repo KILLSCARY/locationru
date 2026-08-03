@@ -22,6 +22,7 @@ import { StagingToolsModule } from './staging-tools/staging-tools.module.js';
 import { StorageModule } from './storage/storage.module.js';
 import { TripsModule } from './trips/trips.module.js';
 import { VehiclesModule } from './vehicles/vehicles.module.js';
+import { VerificationAdminModule } from './verification/verification-admin.module.js';
 import { SmsWebhookModule } from './webhooks/sms-webhook.module.js';
 
 @Module({
@@ -49,6 +50,7 @@ import { SmsWebhookModule } from './webhooks/sms-webhook.module.js';
     SmsWebhookModule,
     NotificationsModule,
     VehiclesModule,
+    VerificationAdminModule,
   ],
 })
 export class AppModule {}
