@@ -122,6 +122,17 @@ private fun DriverApp(
         DriverUiState.Restoring -> LoadingScreen("Восстанавливаем сессию…")
         is DriverUiState.PhoneEntry -> PhoneScreen(state, viewModel::requestCode)
         is DriverUiState.CodeEntry -> CodeScreen(state, viewModel::verifyCode, viewModel::resendCode)
+        is DriverUiState.Onboarding ->
+            OnboardingScreen(
+                state = state,
+                onSaveProfile = viewModel::saveProfile,
+                onCreateVehicle = viewModel::createVehicle,
+                onUploadDocument = viewModel::uploadDocument,
+                onToggleConsent = viewModel::toggleConsent,
+                onSubmit = viewModel::submitForReview,
+                onRefresh = viewModel::refreshOnboarding,
+                onSignOut = viewModel::signOut,
+            )
         is DriverUiState.Workspace -> {
             LaunchedEffect(Unit) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
