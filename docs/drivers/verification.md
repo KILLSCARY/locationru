@@ -60,7 +60,7 @@ REJECTED | CANCELLED | ESCALATED)`. `CREATED` на практике никогд
    `DriverConsentService`) даны и не отозваны → иначе `CONSENT_MISSING`.
 
 Если хотя бы 3-й или 4-й уровень не пройден, но у документа/автомобиля уже
-есть *другая* активная (ещё не отклонённая) версия — проверка всё равно
+есть _другая_ активная (ещё не отклонённая) версия — проверка всё равно
 использует именно ACTIVE-версию, а не голый `status=APPROVED` фильтр по
 всей таблице: это принципиально, потому что `DocumentVersionService`
 позволяет сосуществовать "ещё не решённой" версии и предыдущей одобренной
@@ -95,21 +95,21 @@ CASE_NOT_ASSIGNED_TO_YOU`. Это же ограничение действует
 
 `POST admin/verification/cases/:caseId/...`:
 
-| Действие | Метод сервиса | Эффект |
-|---|---|---|
-| assign | `assign` | назначает кейс себе/другому админу |
-| start-review | `startReview` | ASSIGNED → IN_REVIEW, профиль/авто → UNDER_REVIEW |
-| approve-document | `approveDocument('DRIVER', ...)` | документ → APPROVED, версия активируется |
-| reject-document | `rejectDocument('DRIVER', ...)` | документ → REJECTED, требуется `reasonCode`, комментарий обязателен для `OTHER` |
-| approve-vehicle-document | `approveDocument('VEHICLE', ...)` | то же для документа автомобиля |
-| reject-vehicle-document | `rejectDocument('VEHICLE', ...)` | то же |
-| approve-vehicle | `approveVehicle` | требует, чтобы ВСЕ обязательные документы автомобиля были APPROVED |
-| reject-vehicle | `rejectVehicle` | Vehicle → REJECTED |
-| approve-driver | `approveDriver` | финальное решение — см. ниже |
-| reject-driver | `rejectDriver` | финальное решение — см. ниже |
-| request-changes | `requestChanges` | DriverProfile/Case → CHANGES_REQUESTED |
-| escalate | `escalate` | Case → ESCALATED, priority → HIGH |
-| suspend (не кейс-специфично) | `suspendDriver` | только для уже APPROVED водителя |
+| Действие                     | Метод сервиса                     | Эффект                                                                          |
+| ---------------------------- | --------------------------------- | ------------------------------------------------------------------------------- |
+| assign                       | `assign`                          | назначает кейс себе/другому админу                                              |
+| start-review                 | `startReview`                     | ASSIGNED → IN_REVIEW, профиль/авто → UNDER_REVIEW                               |
+| approve-document             | `approveDocument('DRIVER', ...)`  | документ → APPROVED, версия активируется                                        |
+| reject-document              | `rejectDocument('DRIVER', ...)`   | документ → REJECTED, требуется `reasonCode`, комментарий обязателен для `OTHER` |
+| approve-vehicle-document     | `approveDocument('VEHICLE', ...)` | то же для документа автомобиля                                                  |
+| reject-vehicle-document      | `rejectDocument('VEHICLE', ...)`  | то же                                                                           |
+| approve-vehicle              | `approveVehicle`                  | требует, чтобы ВСЕ обязательные документы автомобиля были APPROVED              |
+| reject-vehicle               | `rejectVehicle`                   | Vehicle → REJECTED                                                              |
+| approve-driver               | `approveDriver`                   | финальное решение — см. ниже                                                    |
+| reject-driver                | `rejectDriver`                    | финальное решение — см. ниже                                                    |
+| request-changes              | `requestChanges`                  | DriverProfile/Case → CHANGES_REQUESTED                                          |
+| escalate                     | `escalate`                        | Case → ESCALATED, priority → HIGH                                               |
+| suspend (не кейс-специфично) | `suspendDriver`                   | только для уже APPROVED водителя                                                |
 
 (В таблице 13 строк, а не 11, потому что документ/автомобиль-approve и
 reject считаются в исходной задаче двумя парами одного действия —
