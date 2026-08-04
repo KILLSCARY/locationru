@@ -25,6 +25,24 @@ export type TripPlace = {
   longitude: number;
 };
 
+// Task 29 section 22 allow-list — the only driver/vehicle fields a passenger
+// may ever see. Never add documents, passport data, unmasked VIN/plate,
+// insurance, review history, or address here.
+export type PassengerVisibleDriver = {
+  firstName: string;
+  lastName: string;
+  rating: number;
+  completedTripsCount: number;
+  verified: boolean;
+  photoUrl: string | null;
+  vehicle: {
+    brand: string;
+    model: string;
+    color: string;
+    registrationNumberMasked: string;
+  };
+};
+
 // Matches TripController.getById's PassengerTripDetails response.
 export type Trip = {
   id: string;
@@ -36,6 +54,7 @@ export type Trip = {
   finalPriceKopecks: number | null;
   selectedDriverId: string | null;
   selectedVehicleId: string | null;
+  assignedDriver: PassengerVisibleDriver | null;
   estimatedDistanceMeters: number;
   estimatedDurationSeconds: number;
 };

@@ -1,9 +1,9 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Button, StyleSheet, Text, View } from 'react-native';
+import { Alert, Button, Image, StyleSheet, Text, View } from 'react-native';
 import { subscribeToTripRoom, type RealtimeEnvelope } from '@/api/realtime';
-import type { TripStatus } from '@/api/types';
+import type { PassengerVisibleDriver, TripStatus } from '@/api/types';
 import { getBids, selectBid } from '@/features/bids/api';
 import { buildRoute } from '@/features/maps/api';
 import type { GeoPoint, RouteResult } from '@/features/maps/types';
@@ -405,6 +405,10 @@ export default function TripScreen() {
             />
           )}
 
+          {(isDriverEnRoute || isInProgress) && trip.data.assignedDriver && (
+            <AssignedDriverCard driver={trip.data.assignedDriver} />
+          )}
+
           {isDriverEnRoute && (
             <DriverEnRouteSection
               routeToPickup={routeToPickup}
@@ -485,6 +489,31 @@ function SearchingSection({
           <Button title="Выбрать водителя" onPress={() => onChoose(bid.id)} />
         </View>
       ))}
+    </View>
+  );
+}
+
+// Renders only the Task 29 section 22 allow-listed fields — never render
+// anything from `driver` beyond what PassengerVisibleDriver declares.
+function AssignedDriverCard({ driver }: { driver: PassengerVisibleDriver }) {
+  return (
+    <View style={[styles.section, styles.driverCard]}>
+      {driver.photoUrl && (
+        <Image source={{ uri: driver.photoUrl }} style={styles.driverPhoto} />
+      )}
+      <View style={{ flex: 1 }}>
+        <Text style={styles.text}>
+          {driver.firstName} {driver.lastName}
+          {driver.verified ? ' ✓' : ''}
+        </Text>
+        <Text style={styles.text}>
+          ★ {driver.rating.toFixed(2)} · {driver.completedTripsCount} поездок
+        </Text>
+        <Text style={styles.text}>
+          {driver.vehicle.color} {driver.vehicle.brand} {driver.vehicle.model},{' '}
+          {driver.vehicle.registrationNumberMasked}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -581,6 +610,8 @@ const styles = StyleSheet.create({
   text: { color: '#FFFFFF' },
   section: { gap: 6, marginTop: 8 },
   bidRow: { gap: 4, marginBottom: 8 },
+  driverCard: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  driverPhoto: { width: 48, height: 48, borderRadius: 24 },
   resumeFollowButton: {
     position: 'absolute',
     top: 50,

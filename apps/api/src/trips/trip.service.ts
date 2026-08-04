@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -12,6 +13,7 @@ import { ConfigService } from '@nestjs/config';
 import type { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../database/prisma.service.js';
 import {
+  DriverVerificationStatus,
   NotificationType,
   TripStatus,
   TripStatusActorType,
@@ -21,10 +23,19 @@ import type { RouteRequest, RouteResult } from '../maps/maps.types.js';
 import { NotificationOutboxService } from '../notifications/notification-outbox.service.js';
 import { NotificationService } from '../notifications/notification.service.js';
 import {
+  OBJECT_STORAGE_PROVIDER,
+  type ObjectStorageProvider,
+} from '../storage/object-storage-provider.interface.js';
+import {
   TripStateMachine,
   type TripTransitionResult,
 } from './trip-state-machine.service.js';
 import type { CreateTripDto } from './dto/create-trip.dto.js';
+
+// TTL for the assigned driver's profile photo URL shown to the passenger —
+// short-lived like the admin document preview URLs (see verification-admin
+// .service.ts's PREVIEW_URL_TTL_SECONDS), re-issued on every trip poll.
+const DRIVER_PHOTO_URL_TTL_SECONDS = 300;
 
 interface IdempotencyRecord {
   requestHash: string;
@@ -68,7 +79,29 @@ interface TripStopRow {
   sequence: number;
 }
 
+/**
+ * Everything a passenger may see about the driver assigned to their trip
+ * (Task 29 section 22 allow-list). Deliberately excludes documents,
+ * passport/identity data, unmasked registration number/VIN, insurance
+ * details, review history, and address — those never leave the admin API.
+ */
+export interface PassengerVisibleDriver {
+  firstName: string;
+  lastName: string;
+  rating: number;
+  completedTripsCount: number;
+  verified: boolean;
+  photoUrl: string | null;
+  vehicle: {
+    brand: string;
+    model: string;
+    color: string;
+    registrationNumberMasked: string;
+  };
+}
+
 export interface PassengerTripDetails extends TripSummaryRow {
+  assignedDriver: PassengerVisibleDriver | null;
   cancelledAt: Date | null;
   comment: string | null;
   completedAt: Date | null;
@@ -108,6 +141,8 @@ export class TripService {
     private readonly mapsService: MapsService,
     private readonly notifications: NotificationService,
     private readonly notificationOutbox: NotificationOutboxService,
+    @Inject(OBJECT_STORAGE_PROVIDER)
+    private readonly storage: ObjectStorageProvider,
   ) {}
 
   async create(
@@ -297,6 +332,13 @@ export class TripService {
       trip.id,
     );
 
+    const assignedDriver = trip.selectedDriverId
+      ? await this.getAssignedDriverPublicProfile(
+          trip.selectedDriverId,
+          trip.selectedVehicleId,
+        )
+      : null;
+
     return {
       id: trip.id,
       status: trip.status,
@@ -305,6 +347,7 @@ export class TripService {
       finalPriceKopecks: trip.finalPriceKopecks,
       selectedDriverId: trip.selectedDriverId,
       selectedVehicleId: trip.selectedVehicleId,
+      assignedDriver,
       pickup: {
         address: trip.pickupAddress,
         latitude: Number(trip.pickupLatitude),
@@ -333,6 +376,68 @@ export class TripService {
         latitude: Number(stop.latitude),
         longitude: Number(stop.longitude),
       })),
+    };
+  }
+
+  /**
+   * Builds the safe public profile a passenger may see for their assigned
+   * driver (Task 29 section 22). `driverId` here is the User id stored on
+   * Trip.selectedDriverId, not DriverProfile.id. Returns null rather than
+   * throwing if either row is missing (e.g. a race with vehicle removal) —
+   * this is a display concern, not a trip-state invariant.
+   */
+  private async getAssignedDriverPublicProfile(
+    driverId: string,
+    vehicleId: string | null,
+  ): Promise<PassengerVisibleDriver | null> {
+    if (!vehicleId) return null;
+
+    const [driver, vehicle] = await Promise.all([
+      this.prisma.driverProfile.findUnique({
+        where: { userId: driverId },
+        select: {
+          firstName: true,
+          lastName: true,
+          rating: true,
+          completedTripsCount: true,
+          verificationStatus: true,
+          profilePhotoObjectKey: true,
+        },
+      }),
+      this.prisma.vehicle.findUnique({
+        where: { id: vehicleId },
+        select: {
+          brand: true,
+          model: true,
+          color: true,
+          registrationNumberMasked: true,
+        },
+      }),
+    ]);
+    if (!driver || !vehicle) return null;
+
+    const photoUrl = driver.profilePhotoObjectKey
+      ? (
+          await this.storage.createSecureDownloadUrl(
+            driver.profilePhotoObjectKey,
+            DRIVER_PHOTO_URL_TTL_SECONDS,
+          )
+        ).url
+      : null;
+
+    return {
+      firstName: driver.firstName,
+      lastName: driver.lastName,
+      rating: Number(driver.rating),
+      completedTripsCount: driver.completedTripsCount,
+      verified: driver.verificationStatus === DriverVerificationStatus.APPROVED,
+      photoUrl,
+      vehicle: {
+        brand: vehicle.brand,
+        model: vehicle.model,
+        color: vehicle.color,
+        registrationNumberMasked: vehicle.registrationNumberMasked,
+      },
     };
   }
 
