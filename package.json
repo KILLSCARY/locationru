@@ -27,6 +27,7 @@
     "staging:smoke": "bash scripts/staging/smoke.sh",
     "staging:test:sms": "bash scripts/staging/test-sms.sh",
     "staging:test:push": "bash scripts/staging/test-push.sh",
+    "staging:test:driver-verification": "bash scripts/staging/test-driver-verification.sh",
     "staging:backup": "bash scripts/staging/backup.sh",
     "staging:backup:list": "bash scripts/staging/backup-list.sh",
     "staging:restore": "bash scripts/staging/restore.sh",
