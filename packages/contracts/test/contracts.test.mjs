@@ -8,8 +8,16 @@ import {
   CreateTripRequestSchema,
   DriverBidSchema,
   DriverLocationUpdateSchema,
+  NotificationInboxItemSchema,
+  NotificationInboxResponseSchema,
+  NotificationPreferencesResponseSchema,
+  NotificationTypeSchema,
+  PushDataPayloadSchema,
+  PushNotificationPayloadSchema,
   RealtimeEventSchemas,
+  RegisterDeviceRequestSchema,
   TripStatusSchema,
+  UpdateNotificationPreferencesRequestSchema,
 } from '../dist/index.js';
 
 const ids = {
@@ -114,6 +122,146 @@ test('validates websocket envelopes and exposes the v1 contract identity', () =>
       occurredAt: timestamp,
       payload: { tripId: ids.tripId, status: 'SEARCHING', version: 1 },
     }).success,
+    false,
+  );
+});
+
+test('validates the full push notification manifest', () => {
+  assert.equal(
+    NotificationTypeSchema.safeParse('DRIVER_NEW_TRIP_AVAILABLE').success,
+    true,
+  );
+  assert.equal(
+    NotificationTypeSchema.safeParse('MARKETING_BLAST').success,
+    false,
+  );
+  assert.equal(
+    PushNotificationPayloadSchema.safeParse({
+      notificationId: ids.bidId,
+      type: 'PASSENGER_DRIVER_ARRIVED',
+      entityType: 'TRIP',
+      entityId: ids.tripId,
+      occurredAt: timestamp,
+      sequence: 1,
+      deepLink: `resilienttaxi://trips/${ids.tripId}`,
+      title: 'Водитель прибыл',
+      body: 'Машина ожидает в точке подачи.',
+      dataVersion: 1,
+    }).success,
+    true,
+  );
+});
+
+test('rejects any push data payload field beyond the allowed minimal set', () => {
+  const valid = {
+    notificationId: ids.bidId,
+    type: 'PASSENGER_BID_RECEIVED',
+    tripId: ids.tripId,
+    bidId: ids.bidId,
+    sequence: 1,
+    occurredAt: timestamp,
+  };
+  assert.equal(PushDataPayloadSchema.safeParse(valid).success, true);
+
+  for (const forbiddenKey of [
+    'accessToken',
+    'refreshToken',
+    'otp',
+    'phone',
+    'bankAccount',
+    'webhookSecret',
+  ]) {
+    assert.equal(
+      PushDataPayloadSchema.safeParse({ ...valid, [forbiddenKey]: 'leak' })
+        .success,
+      false,
+      `expected ${forbiddenKey} to be rejected`,
+    );
+  }
+});
+
+test('validates a device registration request and rejects an empty push token', () => {
+  const request = {
+    deviceId: 'device-1',
+    deviceSessionId: ids.tripId,
+    application: 'PASSENGER',
+    platform: 'IOS',
+    provider: 'APNS',
+    pushToken: 'a'.repeat(64),
+    notificationsPermission: true,
+  };
+  assert.equal(RegisterDeviceRequestSchema.safeParse(request).success, true);
+  assert.equal(
+    RegisterDeviceRequestSchema.safeParse({ ...request, pushToken: '' })
+      .success,
+    false,
+  );
+});
+
+test('validates a notification preferences response and rejects an unknown category', () => {
+  const response = {
+    categories: [
+      {
+        category: 'SECURITY',
+        pushEnabled: true,
+        soundEnabled: true,
+        vibrationEnabled: true,
+      },
+    ],
+    previewMode: 'GENERIC',
+  };
+  assert.equal(
+    NotificationPreferencesResponseSchema.safeParse(response).success,
+    true,
+  );
+  assert.equal(
+    NotificationPreferencesResponseSchema.safeParse({
+      ...response,
+      categories: [{ ...response.categories[0], category: 'MARKETING' }],
+    }).success,
+    false,
+  );
+});
+
+test('an update-preferences request allows partial category fields but still requires the category', () => {
+  assert.equal(
+    UpdateNotificationPreferencesRequestSchema.safeParse({
+      categories: [{ category: 'PAYMENTS', pushEnabled: false }],
+    }).success,
+    true,
+  );
+  assert.equal(
+    UpdateNotificationPreferencesRequestSchema.safeParse({
+      categories: [{ pushEnabled: false }],
+    }).success,
+    false,
+  );
+});
+
+test('validates a notification inbox item and response', () => {
+  const item = {
+    id: ids.bidId,
+    type: 'PASSENGER_BID_RECEIVED',
+    title: 'Новое предложение',
+    body: '2 предложения от водителей',
+    createdAt: timestamp,
+    readAt: null,
+    openedAt: null,
+    entityType: 'TRIP',
+    entityId: ids.tripId,
+    deepLink: `resilienttaxi://trips/${ids.tripId}`,
+  };
+  assert.equal(NotificationInboxItemSchema.safeParse(item).success, true);
+  assert.equal(
+    NotificationInboxResponseSchema.safeParse({
+      items: [item],
+      nextCursor: null,
+    }).success,
+    true,
+  );
+  assert.equal(
+    NotificationInboxItemSchema.safeParse({ ...item, id: 'not-a-uuid' })
+      .success,
     false,
   );
 });

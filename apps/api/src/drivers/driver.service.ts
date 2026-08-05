@@ -14,19 +14,23 @@ import type { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../database/prisma.service.js';
 import {
   DriverLocationConfidence,
-  DriverStatus,
+  DriverOperationalStatus,
   DriverVerificationStatus,
-  VehicleStatus,
+  TripStatus,
 } from '../generated/prisma/client.js';
 import { RedisService } from '../redis/redis.service.js';
 import { RealtimeOutboxService } from '../realtime/realtime-outbox.service.js';
 import type { BatchDriverLocationDto } from './dto/batch-driver-location.dto.js';
 import type { DriverLocationDto } from './dto/driver-location.dto.js';
+import { GoOnlineDto } from './dto/go-online.dto.js';
+import {
+  DriverEligibilityService,
+  type BlockingReason,
+} from './driver-eligibility.service.js';
 
 interface DriverProfileForStatus {
-  status: DriverStatus;
+  operationalStatus: DriverOperationalStatus;
   verificationStatus: DriverVerificationStatus;
-  vehicles: Array<{ id: string }>;
 }
 
 interface LatestPosition {
@@ -45,8 +49,14 @@ interface InsertedLocation {
 export interface DriverStatusResponse {
   hasApprovedVehicle: boolean;
   lastLocation: LatestPosition | null;
-  status: DriverStatus;
+  status: DriverOperationalStatus;
   verificationStatus: DriverVerificationStatus;
+  eligibility: {
+    eligible: boolean;
+    blockingReasons: BlockingReason[];
+    warnings: string[];
+    expiresSoon: boolean;
+  };
 }
 
 export interface LocationSubmissionResult {
@@ -62,51 +72,46 @@ export class DriverService {
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly realtimeOutbox: RealtimeOutboxService,
+    private readonly eligibility: DriverEligibilityService,
   ) {}
 
-  async goOnline(user: AuthenticatedUser): Promise<DriverStatusResponse> {
-    const profile = await this.getDriverProfile(user, true);
+  /**
+   * The only place a driver flips ONLINE — every rule about whether that's
+   * allowed lives in DriverEligibilityService, never duplicated here. See
+   * docs/drivers/eligibility.md.
+   */
+  async goOnline(
+    user: AuthenticatedUser,
+    input: GoOnlineDto = {},
+  ): Promise<DriverStatusResponse> {
+    await this.getDriverProfile(user);
+    const result = await this.eligibility.evaluateDriverEligibility(user.id, {
+      locationPermissionGranted: input.locationPermissionGranted,
+    });
 
-    if (profile.status === DriverStatus.SUSPENDED) {
+    if (!result.eligible) {
       throw new ConflictException({
-        code: 'DRIVER_SUSPENDED',
-        message: 'A suspended driver cannot go online',
+        code: 'DRIVER_NOT_ELIGIBLE',
+        message: 'Driver does not currently meet the requirements to go online',
+        blockingReasons: result.blockingReasons,
       });
     }
 
-    if (!profile.vehicles.length) {
-      throw new ConflictException({
-        code: 'APPROVED_VEHICLE_REQUIRED',
-        message: 'An approved vehicle is required before going online',
-      });
-    }
-
-    if (profile.status !== DriverStatus.ONLINE) {
-      await this.prisma.driverProfile.update({
-        where: { userId: user.id },
-        data: { status: DriverStatus.ONLINE },
-      });
-    }
+    await this.prisma.driverProfile.update({
+      where: { userId: user.id },
+      data: { operationalStatus: DriverOperationalStatus.ONLINE },
+    });
 
     return this.getStatus(user);
   }
 
   async goOffline(user: AuthenticatedUser): Promise<DriverStatusResponse> {
-    const profile = await this.getDriverProfile(user, false);
+    await this.getDriverProfile(user);
 
-    if (profile.status === DriverStatus.SUSPENDED) {
-      throw new ConflictException({
-        code: 'DRIVER_SUSPENDED',
-        message: 'A suspended driver status cannot be changed',
-      });
-    }
-
-    if (profile.status !== DriverStatus.OFFLINE) {
-      await this.prisma.driverProfile.update({
-        where: { userId: user.id },
-        data: { status: DriverStatus.OFFLINE },
-      });
-    }
+    await this.prisma.driverProfile.update({
+      where: { userId: user.id },
+      data: { operationalStatus: DriverOperationalStatus.OFFLINE },
+    });
     await this.redis.delete(this.latestPositionKey(user.id));
 
     return this.getStatus(user);
@@ -127,16 +132,23 @@ export class DriverService {
   }
 
   async getStatus(user: AuthenticatedUser): Promise<DriverStatusResponse> {
-    const profile = await this.getDriverProfile(user, false);
+    const profile = await this.getDriverProfile(user);
     const lastLocation = this.parseLatestPosition(
       await this.redis.get(this.latestPositionKey(user.id)),
     );
+    const result = await this.eligibility.evaluateDriverEligibility(user.id);
 
     return {
-      status: profile.status,
+      status: profile.operationalStatus,
       verificationStatus: profile.verificationStatus,
-      hasApprovedVehicle: profile.vehicles.length > 0,
+      hasApprovedVehicle: result.approvedVehicleIds.length > 0,
       lastLocation,
+      eligibility: {
+        eligible: result.eligible,
+        blockingReasons: result.blockingReasons,
+        warnings: result.warnings,
+        expiresSoon: result.expiresSoon,
+      },
     };
   }
 
@@ -175,7 +187,7 @@ export class DriverService {
       }
     }
 
-    await this.getDriverProfile(user, true);
+    await this.getDriverProfile(user, { requireApproval: true });
     const deviceId = await this.getDeviceId(user);
     await this.consumeLocationRateLimit(user.id, inputs.length);
 
@@ -186,6 +198,7 @@ export class DriverService {
     let previous = this.parseLatestPosition(
       await this.redis.get(this.latestPositionKey(user.id)),
     );
+    const activeTripId = await this.findActiveTripId(user.id);
     const ordered = [...inputs].sort(
       (left, right) => left.recordedAt.getTime() - right.recordedAt.getTime(),
     );
@@ -239,22 +252,50 @@ export class DriverService {
             'driverLocations.latestPositionTtlSeconds',
           ),
         );
-        await this.realtimeOutbox.enqueueDriverLocationUpdate({
-          driverId: user.id,
-          latitude: candidate.latitude,
-          longitude: candidate.longitude,
-          accuracyMeters: candidate.accuracyMeters,
-          recordedAt: candidate.recordedAt,
-        });
+        await this.realtimeOutbox.enqueueDriverLocationUpdate(
+          {
+            driverId: user.id,
+            latitude: candidate.latitude,
+            longitude: candidate.longitude,
+            accuracyMeters: candidate.accuracyMeters,
+            recordedAt: candidate.recordedAt,
+          },
+          activeTripId,
+        );
       }
     }
 
     return result;
   }
 
+  /**
+   * The trip the driver is currently assigned to and en route on, if any — used
+   * to fan location updates out to the passenger's trip room. Statuses before
+   * DRIVER_SELECTED have no assigned driver yet, so they are excluded.
+   */
+  private async findActiveTripId(driverId: string): Promise<string | null> {
+    const trip = await this.prisma.trip.findFirst({
+      where: {
+        selectedDriverId: driverId,
+        status: {
+          in: [
+            TripStatus.DRIVER_SELECTED,
+            TripStatus.PAYMENT_PENDING,
+            TripStatus.PAYMENT_RESERVED,
+            TripStatus.DRIVER_EN_ROUTE,
+            TripStatus.DRIVER_ARRIVED,
+            TripStatus.IN_PROGRESS,
+          ],
+        },
+      },
+      select: { id: true },
+    });
+    return trip?.id ?? null;
+  }
+
   private async getDriverProfile(
     user: AuthenticatedUser,
-    requireApproval: boolean,
+    options: { requireApproval?: boolean } = {},
   ): Promise<DriverProfileForStatus> {
     if (user.role !== 'DRIVER') {
       throw new ForbiddenException({
@@ -266,12 +307,8 @@ export class DriverService {
     const profile = await this.prisma.driverProfile.findUnique({
       where: { userId: user.id },
       select: {
-        status: true,
+        operationalStatus: true,
         verificationStatus: true,
-        vehicles: {
-          where: { status: VehicleStatus.APPROVED },
-          select: { id: true },
-        },
       },
     });
 
@@ -283,7 +320,7 @@ export class DriverService {
     }
 
     if (
-      requireApproval &&
+      options.requireApproval &&
       profile.verificationStatus !== DriverVerificationStatus.APPROVED
     ) {
       throw new ForbiddenException({

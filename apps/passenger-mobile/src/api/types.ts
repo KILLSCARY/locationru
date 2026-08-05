@@ -19,13 +19,44 @@ export type TripStatus =
   | 'DISPUTED'
   | 'REFUNDED';
 
+export type TripPlace = {
+  address: string;
+  latitude: number;
+  longitude: number;
+};
+
+// Task 29 section 22 allow-list — the only driver/vehicle fields a passenger
+// may ever see. Never add documents, passport data, unmasked VIN/plate,
+// insurance, review history, or address here.
+export type PassengerVisibleDriver = {
+  firstName: string;
+  lastName: string;
+  rating: number;
+  completedTripsCount: number;
+  verified: boolean;
+  photoUrl: string | null;
+  vehicle: {
+    brand: string;
+    model: string;
+    color: string;
+    registrationNumberMasked: string;
+  };
+};
+
+// Matches TripController.getById's PassengerTripDetails response.
 export type Trip = {
   id: string;
   status: TripStatus;
   version: number;
-  pickupAddress: string;
-  destinationAddress: string;
+  pickup: TripPlace;
+  destination: TripPlace;
   passengerPriceKopecks: number;
+  finalPriceKopecks: number | null;
+  selectedDriverId: string | null;
+  selectedVehicleId: string | null;
+  assignedDriver: PassengerVisibleDriver | null;
+  estimatedDistanceMeters: number;
+  estimatedDurationSeconds: number;
 };
 
 export type DriverBid = {
@@ -36,5 +67,10 @@ export type DriverBid = {
   distanceToPickupMeters: number;
   expiresAt: string;
   driver: { firstName: string; lastName: string; rating: number };
-  vehicle: { brand: string; model: string; color: string; registrationNumber: string };
+  vehicle: {
+    brand: string;
+    model: string;
+    color: string;
+    registrationNumber: string;
+  };
 };

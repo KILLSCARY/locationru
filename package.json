@@ -17,7 +17,21 @@
     "format:check": "prettier --check .",
     "infra:up": "docker compose up -d --wait",
     "infra:down": "docker compose down",
-    "infra:logs": "docker compose logs -f"
+    "infra:logs": "docker compose logs -f",
+    "dev:simulate-trip": "pnpm --filter @resilient-taxi/api simulate:trip",
+    "staging:up": "docker compose -f docker-compose.staging.yml --env-file .env.staging up -d --build --wait",
+    "staging:down": "docker compose -f docker-compose.staging.yml --env-file .env.staging down",
+    "staging:logs": "docker compose -f docker-compose.staging.yml --env-file .env.staging logs -f",
+    "staging:reset": "docker compose -f docker-compose.staging.yml --env-file .env.staging down -v && pnpm staging:up",
+    "staging:seed": "bash scripts/staging/seed.sh",
+    "staging:smoke": "bash scripts/staging/smoke.sh",
+    "staging:test:sms": "bash scripts/staging/test-sms.sh",
+    "staging:test:push": "bash scripts/staging/test-push.sh",
+    "staging:test:driver-verification": "bash scripts/staging/test-driver-verification.sh",
+    "staging:backup": "bash scripts/staging/backup.sh",
+    "staging:backup:list": "bash scripts/staging/backup-list.sh",
+    "staging:restore": "bash scripts/staging/restore.sh",
+    "staging:deploy": "bash scripts/staging/deploy.sh"
   },
   "devDependencies": {
     "@eslint/js": "9.39.1",

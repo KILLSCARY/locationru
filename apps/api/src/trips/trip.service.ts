@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -11,12 +12,30 @@ import { ConfigService } from '@nestjs/config';
 
 import type { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../database/prisma.service.js';
-import { TripStatus, TripStatusActorType } from '../generated/prisma/client.js';
+import {
+  DriverVerificationStatus,
+  NotificationType,
+  TripStatus,
+  TripStatusActorType,
+} from '../generated/prisma/client.js';
+import { MapsService } from '../maps/maps.service.js';
+import type { RouteRequest, RouteResult } from '../maps/maps.types.js';
+import { NotificationOutboxService } from '../notifications/notification-outbox.service.js';
+import { NotificationService } from '../notifications/notification.service.js';
+import {
+  OBJECT_STORAGE_PROVIDER,
+  type ObjectStorageProvider,
+} from '../storage/object-storage-provider.interface.js';
 import {
   TripStateMachine,
   type TripTransitionResult,
 } from './trip-state-machine.service.js';
 import type { CreateTripDto } from './dto/create-trip.dto.js';
+
+// TTL for the assigned driver's profile photo URL shown to the passenger —
+// short-lived like the admin document preview URLs (see verification-admin
+// .service.ts's PREVIEW_URL_TTL_SECONDS), re-issued on every trip poll.
+const DRIVER_PHOTO_URL_TTL_SECONDS = 300;
 
 interface IdempotencyRecord {
   requestHash: string;
@@ -60,7 +79,29 @@ interface TripStopRow {
   sequence: number;
 }
 
+/**
+ * Everything a passenger may see about the driver assigned to their trip
+ * (Task 29 section 22 allow-list). Deliberately excludes documents,
+ * passport/identity data, unmasked registration number/VIN, insurance
+ * details, review history, and address — those never leave the admin API.
+ */
+export interface PassengerVisibleDriver {
+  firstName: string;
+  lastName: string;
+  rating: number;
+  completedTripsCount: number;
+  verified: boolean;
+  photoUrl: string | null;
+  vehicle: {
+    brand: string;
+    model: string;
+    color: string;
+    registrationNumberMasked: string;
+  };
+}
+
 export interface PassengerTripDetails extends TripSummaryRow {
+  assignedDriver: PassengerVisibleDriver | null;
   cancelledAt: Date | null;
   comment: string | null;
   completedAt: Date | null;
@@ -97,6 +138,11 @@ export class TripService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly stateMachine: TripStateMachine,
+    private readonly mapsService: MapsService,
+    private readonly notifications: NotificationService,
+    private readonly notificationOutbox: NotificationOutboxService,
+    @Inject(OBJECT_STORAGE_PROVIDER)
+    private readonly storage: ObjectStorageProvider,
   ) {}
 
   async create(
@@ -108,6 +154,11 @@ export class TripService {
     const key = this.normalizeIdempotencyKey(idempotencyKey);
     this.assertMinimumPrice(input.passengerPriceKopecks);
     const requestHash = this.hashRequest(input);
+    // The server always computes distance/duration/geometry; values that might
+    // arrive from the client are never trusted.
+    const route = await this.estimateTripRoute(input);
+    const routeWkt = this.toLineStringWkt(route);
+    const routeBounds = JSON.stringify(route.bounds);
 
     try {
       return await this.prisma.$transaction(async (transaction) => {
@@ -162,14 +213,19 @@ export class TripService {
         const created = await transaction.$queryRawUnsafe<TripSummaryRow[]>(
           `INSERT INTO "trips" (
               "id", "passengerId", "status", "passengerPriceKopecks",
-              "pickupLocation", "destinationLocation", "pickupAddress", "destinationAddress",
-              "estimatedDistanceMeters", "estimatedDurationSeconds", "childSeat", "pet", "luggage", "comment",
+              "pickupLocation", "destinationLocation", "route",
+              "pickupAddress", "destinationAddress", "pickupPlaceId", "destinationPlaceId",
+              "estimatedDistanceMeters", "estimatedDurationSeconds", "routeProvider", "routeBounds",
+              "childSeat", "pet", "luggage", "comment",
               "createdAt", "updatedAt"
            ) VALUES (
               $1, $2, 'DRAFT', $3,
               ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography,
               ST_SetSRID(ST_MakePoint($6, $7), 4326)::geography,
-              $8, $9, 0, 0, $10, $11, $12, $13, NOW(), NOW()
+              ST_GeogFromText($8),
+              $9, $10, $11, $12,
+              $13, $14, $15, $16::jsonb,
+              $17, $18, $19, $20, NOW(), NOW()
            )
            RETURNING "id", "status", "version"`,
           tripId,
@@ -179,8 +235,15 @@ export class TripService {
           input.pickup.latitude,
           input.destination.longitude,
           input.destination.latitude,
+          routeWkt,
           input.pickupAddress,
           input.destinationAddress,
+          input.pickupPlaceId ?? null,
+          input.destinationPlaceId ?? null,
+          route.distanceMeters,
+          route.durationSeconds,
+          route.provider,
+          routeBounds,
           options.childSeat ?? false,
           options.pet ?? false,
           options.luggage ?? false,
@@ -269,6 +332,13 @@ export class TripService {
       trip.id,
     );
 
+    const assignedDriver = trip.selectedDriverId
+      ? await this.getAssignedDriverPublicProfile(
+          trip.selectedDriverId,
+          trip.selectedVehicleId,
+        )
+      : null;
+
     return {
       id: trip.id,
       status: trip.status,
@@ -277,6 +347,7 @@ export class TripService {
       finalPriceKopecks: trip.finalPriceKopecks,
       selectedDriverId: trip.selectedDriverId,
       selectedVehicleId: trip.selectedVehicleId,
+      assignedDriver,
       pickup: {
         address: trip.pickupAddress,
         latitude: Number(trip.pickupLatitude),
@@ -305,6 +376,68 @@ export class TripService {
         latitude: Number(stop.latitude),
         longitude: Number(stop.longitude),
       })),
+    };
+  }
+
+  /**
+   * Builds the safe public profile a passenger may see for their assigned
+   * driver (Task 29 section 22). `driverId` here is the User id stored on
+   * Trip.selectedDriverId, not DriverProfile.id. Returns null rather than
+   * throwing if either row is missing (e.g. a race with vehicle removal) —
+   * this is a display concern, not a trip-state invariant.
+   */
+  private async getAssignedDriverPublicProfile(
+    driverId: string,
+    vehicleId: string | null,
+  ): Promise<PassengerVisibleDriver | null> {
+    if (!vehicleId) return null;
+
+    const [driver, vehicle] = await Promise.all([
+      this.prisma.driverProfile.findUnique({
+        where: { userId: driverId },
+        select: {
+          firstName: true,
+          lastName: true,
+          rating: true,
+          completedTripsCount: true,
+          verificationStatus: true,
+          profilePhotoObjectKey: true,
+        },
+      }),
+      this.prisma.vehicle.findUnique({
+        where: { id: vehicleId },
+        select: {
+          brand: true,
+          model: true,
+          color: true,
+          registrationNumberMasked: true,
+        },
+      }),
+    ]);
+    if (!driver || !vehicle) return null;
+
+    const photoUrl = driver.profilePhotoObjectKey
+      ? (
+          await this.storage.createSecureDownloadUrl(
+            driver.profilePhotoObjectKey,
+            DRIVER_PHOTO_URL_TTL_SECONDS,
+          )
+        ).url
+      : null;
+
+    return {
+      firstName: driver.firstName,
+      lastName: driver.lastName,
+      rating: Number(driver.rating),
+      completedTripsCount: driver.completedTripsCount,
+      verified: driver.verificationStatus === DriverVerificationStatus.APPROVED,
+      photoUrl,
+      vehicle: {
+        brand: vehicle.brand,
+        model: vehicle.model,
+        color: vehicle.color,
+        registrationNumberMasked: vehicle.registrationNumberMasked,
+      },
     };
   }
 
@@ -341,13 +474,15 @@ export class TripService {
     }
 
     try {
-      return await this.stateMachine.transition({
+      const result = await this.stateMachine.transition({
         tripId,
         expectedVersion: trip.version,
         newStatus: TripStatus.CANCELLED_BY_PASSENGER,
         actorType: TripStatusActorType.PASSENGER,
         actorId: passenger.id,
       });
+      await this.notifyDriverOfCancellation(trip.selectedDriverId, tripId);
+      return result;
     } catch (error) {
       const latest = await this.findPassengerTrip(passenger, tripId);
 
@@ -359,10 +494,29 @@ export class TripService {
     }
   }
 
+  /** Best-effort push wake-up on top of the already-committed cancellation above (see TripLifecycleService.notifyLifecycleAction for the same reasoning). Deduplication key is the trip id itself — a trip can only be cancelled-by-passenger once. */
+  private async notifyDriverOfCancellation(
+    selectedDriverId: string | null,
+    tripId: string,
+  ): Promise<void> {
+    if (!selectedDriverId) return;
+
+    const draft = this.notifications.createDraft({
+      userId: selectedDriverId,
+      type: NotificationType.DRIVER_TRIP_CANCELLED,
+      application: 'DRIVER' as never,
+      entityType: 'TRIP',
+      entityId: tripId,
+      idempotencyKey: `trip-cancelled:${tripId}`,
+      templateParams: { tripId },
+    });
+    await this.notificationOutbox.enqueue(this.prisma, draft);
+  }
+
   private async findPassengerTrip(
     passenger: AuthenticatedUser,
     tripId: string,
-  ): Promise<TripTransitionResult> {
+  ): Promise<TripTransitionResult & { selectedDriverId: string | null }> {
     this.assertPassenger(passenger);
     const trip = await this.prisma.trip.findFirst({
       where: {
@@ -373,6 +527,7 @@ export class TripService {
         id: true,
         status: true,
         version: true,
+        selectedDriverId: true,
       },
     });
 
@@ -384,6 +539,41 @@ export class TripService {
     }
 
     return trip;
+  }
+
+  /**
+   * Builds a route from pickup through any stops to the destination. Distance,
+   * duration and geometry always come from the maps provider — never from the
+   * client — so pricing and dispatch reason about server-owned figures.
+   */
+  private async estimateTripRoute(input: CreateTripDto): Promise<RouteResult> {
+    const request: RouteRequest = {
+      origin: {
+        latitude: input.pickup.latitude,
+        longitude: input.pickup.longitude,
+      },
+      destination: {
+        latitude: input.destination.latitude,
+        longitude: input.destination.longitude,
+      },
+      waypoints: (input.stops ?? []).map((stop, index) => ({
+        latitude: stop.location.latitude,
+        longitude: stop.location.longitude,
+        sequence: index + 1,
+      })),
+      transportMode: 'driving',
+      avoidTolls: false,
+      avoidUnpavedRoads: false,
+    };
+    return this.mapsService.buildRoute(request);
+  }
+
+  /** WKT LINESTRING for ST_GeogFromText, bound as a single query parameter. */
+  private toLineStringWkt(route: RouteResult): string {
+    const points = route.geometry
+      .map((point) => `${point.longitude} ${point.latitude}`)
+      .join(', ');
+    return `SRID=4326;LINESTRING(${points})`;
   }
 
   private assertPassenger(user: AuthenticatedUser): void {

@@ -47,7 +47,7 @@ export class RealtimeAuthorizationService {
     user: AuthenticatedUser,
     tripId: string,
   ): Promise<boolean> {
-    if (user.role === 'ADMIN') {
+    if (user.role === 'ADMIN' || user.role === 'SUPER_ADMIN') {
       return Boolean(
         await this.prisma.trip.findUnique({
           where: { id: tripId },

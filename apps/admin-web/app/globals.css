@@ -56,3 +56,11 @@ a {
 .danger {
   color: #a40000;
 }
+.staging-result {
+  background: #f0f0f0;
+  border: 1px solid #ddd;
+  padding: 8px;
+  max-height: 300px;
+  overflow: auto;
+  font-size: 12px;
+}

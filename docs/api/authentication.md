@@ -19,9 +19,14 @@ API использует вход по одноразовому SMS-коду и 
 только как HMAC-SHA256. Redis также хранит счётчики запросов и неправильных
 попыток.
 
-В development код выводит `DevelopmentSmsProvider` через структурированный
-лог. В test код не выводится. В production приложение отказывается запускаться
-с этим провайдером.
+SMS-провайдер выбирается фабрикой `createSmsProvider` по конфигурации
+(`SMS_PROVIDER`). Вне production по умолчанию используется
+`DevelopmentSmsProvider`: в development код выводится через структурированный
+лог, в test — не выводится. В production обязателен `SMS_PROVIDER=http` и
+боевой `HttpSmsProvider` (base URL, ключ и sender задаются переменными
+`SMS_*`); development-провайдер запрещён на уровне env-валидации и фабрики.
+Пока `HttpSmsProvider.sendCode` не подключён к конкретному шлюзу, он кидает
+`NotImplemented`, чтобы одноразовые коды не терялись молча.
 
 ## Токены и сессии
 

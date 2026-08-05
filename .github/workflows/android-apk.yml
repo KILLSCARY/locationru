@@ -1,0 +1,63 @@
+name: Android APK
+
+# Собирает устанавливаемый debug-APK приложения водителя и выкладывает его
+# артефактом. Запуск вручную (кнопка Run workflow) или на push в master —
+# на каждый PR не гоняется, чтобы не замедлять основной CI.
+on:
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: 'API base URL for the dev flavor (leave empty for the placeholder default)'
+        required: false
+        default: ''
+  push:
+    # `claude/what-is-this-z7pp43` is temporary: it lets the APK build run on
+    # the feature branch before merge. Remove it once merged to master.
+    branches: [master, claude/what-is-this-z7pp43]
+    paths:
+      - 'apps/driver-android/**'
+      - '.github/workflows/android-apk.yml'
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    name: Build dev debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: apps/driver-android
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Assemble dev debug APK
+        env:
+          # Temporary fallback to the current test server so branch pushes also
+          # produce a phone-ready APK. Remove before merging to master; the
+          # workflow_dispatch input takes precedence when provided.
+          DRIVER_DEV_API_BASE_URL: ${{ github.event.inputs.api_base_url || 'https://51.250.39.114.sslip.io/api/v1/' }}
+          MAPKIT_API_KEY: ${{ secrets.MAPKIT_API_KEY }}
+        run: ./gradlew :app:assembleDevDebug --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: resilient-taxi-driver-dev-debug
+          path: apps/driver-android/app/build/outputs/apk/dev/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14

@@ -12,6 +12,7 @@ enum UserRole {
   PASSENGER
   DRIVER
   ADMIN
+  SUPER_ADMIN
 }
 
 enum UserStatus {
@@ -20,25 +21,54 @@ enum UserStatus {
   PENDING
 }
 
-enum DriverStatus {
+/**
+ * The driver's own on/off availability toggle — independent of whether they're allowed to use it at all (DriverVerificationStatus) or whether their account exists at all (User.status).
+ */
+enum DriverOperationalStatus {
   OFFLINE
   ONLINE
   BUSY
-  SUSPENDED
-}
-
-enum DriverVerificationStatus {
-  NOT_SUBMITTED
-  PENDING
-  APPROVED
-  REJECTED
-}
-
-enum VehicleStatus {
-  PENDING
-  APPROVED
-  REJECTED
   BLOCKED
+}
+
+/**
+ * The driver-partner verification lifecycle (Task 29). Distinct from
+ * DriverOperationalStatus (can they flip online right now) and from
+ * User.status (is the account itself active) — see
+ * docs/drivers/verification.md for the full state diagram.
+ */
+enum DriverVerificationStatus {
+  NOT_STARTED
+  PROFILE_INCOMPLETE
+  DOCUMENTS_REQUIRED
+  DOCUMENTS_SUBMITTED
+  UNDER_REVIEW
+  CHANGES_REQUESTED
+  APPROVED
+  REJECTED
+  SUSPENDED
+  EXPIRED
+}
+
+/**
+ * Whether this vehicle is currently usable at all — separate from whether it has passed document review (VehicleVerificationStatus).
+ */
+enum VehicleStatus {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+  ARCHIVED
+}
+
+enum VehicleVerificationStatus {
+  DRAFT
+  DOCUMENTS_REQUIRED
+  SUBMITTED
+  UNDER_REVIEW
+  CHANGES_REQUESTED
+  APPROVED
+  REJECTED
+  EXPIRED
 }
 
 enum DevicePlatform {
@@ -146,19 +176,28 @@ enum TripStatusActorType {
 }
 
 model User {
-  id               String            @id @default(uuid()) @db.Uuid
-  phone            String            @unique(map: "users_phone_key") @db.VarChar(16)
-  role             UserRole
-  status           UserStatus        @default(PENDING)
-  createdAt        DateTime          @default(now()) @db.Timestamptz(3)
-  updatedAt        DateTime          @updatedAt @db.Timestamptz(3)
-  passengerProfile PassengerProfile?
-  driverProfile    DriverProfile?
-  deviceSessions   DeviceSession[]
-  passengerTrips   Trip[]           @relation("TripPassenger")
-  selectedTrips    Trip[]           @relation("TripSelectedDriver")
-  tripIdempotencyKeys TripIdempotencyKey[]
-  adminAuditLogs      AdminAuditLog[] @relation("AdminAuditActor")
+  id                         String                      @id @default(uuid()) @db.Uuid
+  phone                      String                      @unique(map: "users_phone_key") @db.VarChar(16)
+  role                       UserRole
+  status                     UserStatus                  @default(PENDING)
+  createdAt                  DateTime                    @default(now()) @db.Timestamptz(3)
+  updatedAt                  DateTime                    @updatedAt @db.Timestamptz(3)
+  passengerProfile           PassengerProfile?
+  driverProfile              DriverProfile?
+  deviceSessions             DeviceSession[]
+  passengerTrips             Trip[]                      @relation("TripPassenger")
+  selectedTrips              Trip[]                      @relation("TripSelectedDriver")
+  tripIdempotencyKeys        TripIdempotencyKey[]
+  adminAuditLogs             AdminAuditLog[]             @relation("AdminAuditActor")
+  storedDocuments            StoredDocument[]
+  devicePushTokens           DevicePushToken[]
+  notifications              Notification[]
+  notificationPreferences    NotificationPreference[]
+  notificationPrivacySetting NotificationPrivacySetting?
+  driverDocumentsReviewed    DriverDocument[]            @relation("DriverDocumentReviewer")
+  vehicleDocumentsReviewed   VehicleDocument[]           @relation("VehicleDocumentReviewer")
+  verificationCasesAssigned  VerificationCase[]          @relation("VerificationCaseAssignee")
+  driverConsents             DriverConsent[]
 
   @@index([role, status], map: "users_role_status_idx")
   @@index([createdAt], map: "users_created_at_idx")
@@ -166,14 +205,14 @@ model User {
 }
 
 model AdminAuditLog {
-  id        String   @id @default(uuid()) @db.Uuid
-  adminId   String   @db.Uuid
-  action    String   @db.VarChar(64)
-  targetType String  @db.VarChar(64)
-  targetId  String   @db.Uuid
-  payload   Json
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  admin     User     @relation("AdminAuditActor", fields: [adminId], references: [id], onDelete: Restrict)
+  id         String   @id @default(uuid()) @db.Uuid
+  adminId    String   @db.Uuid
+  action     String   @db.VarChar(64)
+  targetType String   @db.VarChar(64)
+  targetId   String   @db.Uuid
+  payload    Json
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  admin      User     @relation("AdminAuditActor", fields: [adminId], references: [id], onDelete: Restrict)
 
   @@index([adminId, createdAt], map: "admin_audit_logs_admin_created_at_idx")
   @@index([targetType, targetId, createdAt], map: "admin_audit_logs_target_created_at_idx")
@@ -186,87 +225,150 @@ model PassengerProfile {
   lastName            String  @db.VarChar(100)
   rating              Decimal @default(5.0) @db.Decimal(3, 2)
   completedTripsCount Int     @default(0)
-  user                 User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("passenger_profiles")
 }
 
+/**
+ * The driver-partner profile (Task 29). `id` is a synthetic PK distinct from
+ * `userId` purely to match the task's literal field list — every existing
+ * relation in this schema (Vehicle.driverId, DriverBid.driverId,
+ * DispatchAttemptLog, DriverLocation, Trip.selectedDriverId, ...) continues
+ * to reference `userId` (kept `@unique`), so this adds a field without any
+ * blast radius on the rest of the schema. See docs/drivers/profile.md.
+ * `phone` mirrors User.phone (kept in sync by DriverProfileService — never
+ * editable through the profile-update endpoint; only a verified phone
+ * change flow may touch it) so a document/verification-case snapshot has a
+ * stable phone value even if it's read without a User join.
+ */
 model DriverProfile {
-  userId                String                   @id @db.Uuid
+  id                    String                   @id @default(uuid()) @db.Uuid
+  userId                String                   @unique @db.Uuid
   firstName             String                   @db.VarChar(100)
   lastName              String                   @db.VarChar(100)
-  status                DriverStatus             @default(OFFLINE)
-  verificationStatus    DriverVerificationStatus @default(NOT_SUBMITTED)
+  middleName            String?                  @db.VarChar(100)
+  birthDate             DateTime?                @db.Date
+  phone                 String                   @db.VarChar(16)
+  email                 String?                  @db.VarChar(255)
+  cityId                String                   @db.VarChar(64)
+  operationalStatus     DriverOperationalStatus  @default(OFFLINE)
+  verificationStatus    DriverVerificationStatus @default(NOT_STARTED)
   rating                Decimal                  @default(5.0) @db.Decimal(3, 2)
   completedTripsCount   Int                      @default(0)
   commissionBasisPoints Int?                     @db.SmallInt
+  profilePhotoObjectKey String?                  @db.VarChar(512)
+  submittedAt           DateTime?                @db.Timestamptz(3)
+  approvedAt            DateTime?                @db.Timestamptz(3)
+  rejectedAt            DateTime?                @db.Timestamptz(3)
+  suspendedAt           DateTime?                @db.Timestamptz(3)
+  verificationComment   String?                  @db.VarChar(1024)
   createdAt             DateTime                 @default(now()) @db.Timestamptz(3)
   updatedAt             DateTime                 @updatedAt @db.Timestamptz(3)
+  version               Int                      @default(0)
   user                  User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
   vehicles              Vehicle[]
   locations             DriverLocation[]
   dispatchAttemptLogs   DispatchAttemptLog[]
   bids                  DriverBid[]
+  documents             DriverDocument[]
+  verificationCases     VerificationCase[]
 
-  @@index([status, verificationStatus], map: "driver_profiles_status_verification_idx")
+  @@index([operationalStatus, verificationStatus], map: "driver_profiles_status_verification_idx")
   @@index([rating], map: "driver_profiles_rating_idx")
   @@map("driver_profiles")
 }
 
+/**
+ * Registration number/VIN are stored only encrypted (AES-256-GCM via
+ * DriverDataCryptoService) plus a one-way HMAC hash for uniqueness/duplicate
+ * lookups (the encrypted value can't be queried directly since encryption
+ * uses a random IV) — see docs/security/document-storage.md.
+ */
 model Vehicle {
-  id                 String        @id @default(uuid()) @db.Uuid
-  driverId           String        @db.Uuid
-  brand              String        @db.VarChar(100)
-  model              String        @db.VarChar(100)
-  color              String        @db.VarChar(50)
-  registrationNumber String        @unique(map: "vehicles_registration_number_key") @db.VarChar(32)
-  productionYear     Int           @db.SmallInt
-  status             VehicleStatus @default(PENDING)
-  driver             DriverProfile @relation(fields: [driverId], references: [userId], onDelete: Cascade)
-  selectedForTrips   Trip[]
-  bids               DriverBid[]
+  id                          String                    @id @default(uuid()) @db.Uuid
+  driverId                    String                    @db.Uuid
+  brand                       String                    @db.VarChar(100)
+  model                       String                    @db.VarChar(100)
+  color                       String                    @db.VarChar(50)
+  productionYear              Int                       @db.SmallInt
+  registrationNumberEncrypted String                    @db.VarChar(512)
+  registrationNumberMasked    String                    @db.VarChar(32)
+  registrationNumberHash      String                    @unique(map: "vehicles_registration_number_hash_key") @db.VarChar(128)
+  vinEncrypted                String?                   @db.VarChar(512)
+  vinHash                     String?                   @unique(map: "vehicles_vin_hash_key") @db.VarChar(128)
+  vinLastFour                 String?                   @db.VarChar(4)
+  category                    String                    @db.VarChar(32)
+  status                      VehicleStatus             @default(INACTIVE)
+  verificationStatus          VehicleVerificationStatus @default(DRAFT)
+  seats                       Int                       @db.SmallInt
+  childSeatAvailable          Boolean                   @default(false)
+  luggageCapacity             Int?                      @db.SmallInt
+  petAllowed                  Boolean                   @default(false)
+  createdAt                   DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt                   DateTime                  @updatedAt @db.Timestamptz(3)
+  approvedAt                  DateTime?                 @db.Timestamptz(3)
+  rejectedAt                  DateTime?                 @db.Timestamptz(3)
+  version                     Int                       @default(0)
+  driver                      DriverProfile             @relation(fields: [driverId], references: [userId], onDelete: Cascade)
+  selectedForTrips            Trip[]
+  bids                        DriverBid[]
+  documents                   VehicleDocument[]
 
   @@index([driverId, status], map: "vehicles_driver_status_idx")
   @@index([status], map: "vehicles_status_idx")
+  @@index([verificationStatus], map: "vehicles_verification_status_idx")
   @@map("vehicles")
 }
 
 model DeviceSession {
-  id               String         @id @default(uuid()) @db.Uuid
-  userId           String         @db.Uuid
-  deviceId         String         @db.VarChar(255)
+  id               String            @id @default(uuid()) @db.Uuid
+  userId           String            @db.Uuid
+  deviceId         String            @db.VarChar(255)
   platform         DevicePlatform
-  refreshTokenHash String         @db.VarChar(255)
-  lastSeenAt       DateTime       @default(now()) @db.Timestamptz(3)
-  revokedAt        DateTime?      @db.Timestamptz(3)
-  createdAt        DateTime       @default(now()) @db.Timestamptz(3)
-  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appVersion       String?           @db.VarChar(32)
+  refreshTokenHash String            @db.VarChar(255)
+  /**
+   * Constant across every refresh-token rotation for this session; changes
+   * only when a fresh login replaces the session outright. Reusing an old
+   * refresh token revokes every session sharing this id (see AuthService).
+   */
+  tokenFamilyId    String            @default(uuid()) @db.Uuid
+  createdAt        DateTime          @default(now()) @db.Timestamptz(3)
+  lastSeenAt       DateTime          @default(now()) @db.Timestamptz(3)
+  lastIpHash       String?           @db.VarChar(128)
+  userAgentSummary String?           @db.VarChar(255)
+  revokedAt        DateTime?         @db.Timestamptz(3)
+  revokeReason     String?           @db.VarChar(64)
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  devicePushTokens DevicePushToken[]
 
   @@unique([userId, deviceId], map: "device_sessions_user_device_key")
   @@index([userId, revokedAt], map: "device_sessions_user_revoked_idx")
   @@index([lastSeenAt], map: "device_sessions_last_seen_at_idx")
+  @@index([tokenFamilyId], map: "device_sessions_token_family_idx")
   @@map("device_sessions")
 }
 
 model DriverLocation {
-  id                 String                   @id @default(uuid()) @db.Uuid
-  driverId           String                   @db.Uuid
-  deviceId           String                   @db.VarChar(255)
-  recordedAt         DateTime                 @db.Timestamptz(3)
-  receivedAt         DateTime                 @default(now()) @db.Timestamptz(3)
-  location           Unsupported("geography(Point, 4326)")
-  accuracyMeters     Float
+  id                   String                                @id @default(uuid()) @db.Uuid
+  driverId             String                                @db.Uuid
+  deviceId             String                                @db.VarChar(255)
+  recordedAt           DateTime                              @db.Timestamptz(3)
+  receivedAt           DateTime                              @default(now()) @db.Timestamptz(3)
+  location             Unsupported("geography(Point, 4326)")
+  accuracyMeters       Float
   speedMetersPerSecond Float?
-  bearingDegrees     Float?
-  altitudeMeters     Float?
-  provider           String                   @db.VarChar(64)
-  reportedConfidence DriverLocationConfidence?
-  confidence         DriverLocationConfidence
-  suspectedSpoofing  Boolean                  @default(false)
-  stale              Boolean                  @default(false)
-  satellitesVisible  Int?
-  cellCount          Int?
-  driver             DriverProfile            @relation(fields: [driverId], references: [userId], onDelete: Cascade)
+  bearingDegrees       Float?
+  altitudeMeters       Float?
+  provider             String                                @db.VarChar(64)
+  reportedConfidence   DriverLocationConfidence?
+  confidence           DriverLocationConfidence
+  suspectedSpoofing    Boolean                               @default(false)
+  stale                Boolean                               @default(false)
+  satellitesVisible    Int?
+  cellCount            Int?
+  driver               DriverProfile                         @relation(fields: [driverId], references: [userId], onDelete: Cascade)
 
   @@unique([deviceId, recordedAt], map: "driver_locations_device_recorded_at_key")
   @@index([driverId, recordedAt], map: "driver_locations_driver_recorded_at_idx")
@@ -275,36 +377,41 @@ model DriverLocation {
 }
 
 model Trip {
-  id                       String       @id @default(uuid()) @db.Uuid
-  passengerId              String       @db.Uuid
-  selectedDriverId         String?      @db.Uuid
-  selectedVehicleId        String?      @db.Uuid
-  status                   TripStatus   @default(DRAFT)
+  id                       String                                      @id @default(uuid()) @db.Uuid
+  passengerId              String                                      @db.Uuid
+  selectedDriverId         String?                                     @db.Uuid
+  selectedVehicleId        String?                                     @db.Uuid
+  status                   TripStatus                                  @default(DRAFT)
   passengerPriceKopecks    Int
   finalPriceKopecks        Int?
-  commissionBasisPoints    Int?         @db.SmallInt
+  commissionBasisPoints    Int?                                        @db.SmallInt
   commissionKopecks        Int?
   driverPayoutKopecks      Int?
   pickupLocation           Unsupported("geography(Point, 4326)")
   destinationLocation      Unsupported("geography(Point, 4326)")
-  pickupAddress            String       @db.VarChar(512)
-  destinationAddress       String       @db.VarChar(512)
+  route                    Unsupported("geography(LineString, 4326)")?
+  pickupAddress            String                                      @db.VarChar(512)
+  destinationAddress       String                                      @db.VarChar(512)
+  pickupPlaceId            String?                                     @db.VarChar(256)
+  destinationPlaceId       String?                                     @db.VarChar(256)
   estimatedDistanceMeters  Int
   estimatedDurationSeconds Int
-  startedAt                DateTime?    @db.Timestamptz(3)
-  completedAt              DateTime?    @db.Timestamptz(3)
-  cancelledAt              DateTime?    @db.Timestamptz(3)
-  createdAt                DateTime     @default(now()) @db.Timestamptz(3)
-  updatedAt                DateTime     @updatedAt @db.Timestamptz(3)
-  version                  Int          @default(0)
-  childSeat                Boolean      @default(false)
-  pet                      Boolean      @default(false)
-  luggage                  Boolean      @default(false)
-  comment                  String?      @db.VarChar(1000)
-  cityCode                 String?      @db.VarChar(32)
-  passenger                User         @relation("TripPassenger", fields: [passengerId], references: [id], onDelete: Restrict)
-  selectedDriver           User?        @relation("TripSelectedDriver", fields: [selectedDriverId], references: [id], onDelete: SetNull)
-  selectedVehicle          Vehicle?     @relation(fields: [selectedVehicleId], references: [id], onDelete: SetNull)
+  routeProvider            String?                                     @db.VarChar(64)
+  routeBounds              Json?                                       @db.JsonB
+  startedAt                DateTime?                                   @db.Timestamptz(3)
+  completedAt              DateTime?                                   @db.Timestamptz(3)
+  cancelledAt              DateTime?                                   @db.Timestamptz(3)
+  createdAt                DateTime                                    @default(now()) @db.Timestamptz(3)
+  updatedAt                DateTime                                    @updatedAt @db.Timestamptz(3)
+  version                  Int                                         @default(0)
+  childSeat                Boolean                                     @default(false)
+  pet                      Boolean                                     @default(false)
+  luggage                  Boolean                                     @default(false)
+  comment                  String?                                     @db.VarChar(1000)
+  cityCode                 String?                                     @db.VarChar(32)
+  passenger                User                                        @relation("TripPassenger", fields: [passengerId], references: [id], onDelete: Restrict)
+  selectedDriver           User?                                       @relation("TripSelectedDriver", fields: [selectedDriverId], references: [id], onDelete: SetNull)
+  selectedVehicle          Vehicle?                                    @relation(fields: [selectedVehicleId], references: [id], onDelete: SetNull)
   stops                    TripStop[]
   statusHistory            TripStatusHistory[]
   idempotencyKeys          TripIdempotencyKey[]
@@ -326,17 +433,17 @@ model Trip {
 }
 
 model PaymentIntent {
-  id                  String              @id @default(uuid()) @db.Uuid
-  tripId              String              @unique(map: "payment_intents_trip_id_key") @db.Uuid
-  provider            String              @db.VarChar(64)
-  providerPaymentId   String              @unique(map: "payment_intents_provider_payment_id_key") @db.VarChar(128)
-  idempotencyKey      String              @unique(map: "payment_intents_idempotency_key_key") @db.VarChar(255)
-  amountKopecks       Int
-  currency            String              @default("RUB") @db.Char(3)
-  status              PaymentIntentStatus
-  createdAt           DateTime            @default(now()) @db.Timestamptz(3)
-  trip                Trip                @relation(fields: [tripId], references: [id], onDelete: Restrict)
-  transactions        PaymentTransaction[]
+  id                String               @id @default(uuid()) @db.Uuid
+  tripId            String               @unique(map: "payment_intents_trip_id_key") @db.Uuid
+  provider          String               @db.VarChar(64)
+  providerPaymentId String               @unique(map: "payment_intents_provider_payment_id_key") @db.VarChar(128)
+  idempotencyKey    String               @unique(map: "payment_intents_idempotency_key_key") @db.VarChar(255)
+  amountKopecks     Int
+  currency          String               @default("RUB") @db.Char(3)
+  status            PaymentIntentStatus
+  createdAt         DateTime             @default(now()) @db.Timestamptz(3)
+  trip              Trip                 @relation(fields: [tripId], references: [id], onDelete: Restrict)
+  transactions      PaymentTransaction[]
 
   @@index([status, createdAt], map: "payment_intents_status_created_at_idx")
   @@map("payment_intents")
@@ -358,31 +465,31 @@ model PaymentTransaction {
 }
 
 model CommissionRecord {
-  id                  String   @id @default(uuid()) @db.Uuid
-  tripId              String   @unique(map: "commission_records_trip_id_key") @db.Uuid
-  driverId            String   @db.Uuid
-  totalKopecks        Int
+  id                    String   @id @default(uuid()) @db.Uuid
+  tripId                String   @unique(map: "commission_records_trip_id_key") @db.Uuid
+  driverId              String   @db.Uuid
+  totalKopecks          Int
   commissionBasisPoints Int
-  commissionKopecks   Int
-  driverPayoutKopecks Int
-  createdAt           DateTime @default(now()) @db.Timestamptz(3)
-  trip                Trip     @relation(fields: [tripId], references: [id], onDelete: Restrict)
+  commissionKopecks     Int
+  driverPayoutKopecks   Int
+  createdAt             DateTime @default(now()) @db.Timestamptz(3)
+  trip                  Trip     @relation(fields: [tripId], references: [id], onDelete: Restrict)
 
   @@index([driverId, createdAt], map: "commission_records_driver_created_at_idx")
   @@map("commission_records")
 }
 
 model DriverPayout {
-  id                  String             @id @default(uuid()) @db.Uuid
-  tripId              String             @unique(map: "driver_payouts_trip_id_key") @db.Uuid
-  driverId            String             @db.Uuid
-  provider            String             @db.VarChar(64)
-  providerPayoutId    String             @unique(map: "driver_payouts_provider_payout_id_key") @db.VarChar(128)
-  idempotencyKey      String             @unique(map: "driver_payouts_idempotency_key_key") @db.VarChar(255)
-  amountKopecks       Int
-  status              DriverPayoutStatus
-  createdAt           DateTime           @default(now()) @db.Timestamptz(3)
-  trip                Trip               @relation(fields: [tripId], references: [id], onDelete: Restrict)
+  id               String             @id @default(uuid()) @db.Uuid
+  tripId           String             @unique(map: "driver_payouts_trip_id_key") @db.Uuid
+  driverId         String             @db.Uuid
+  provider         String             @db.VarChar(64)
+  providerPayoutId String             @unique(map: "driver_payouts_provider_payout_id_key") @db.VarChar(128)
+  idempotencyKey   String             @unique(map: "driver_payouts_idempotency_key_key") @db.VarChar(255)
+  amountKopecks    Int
+  status           DriverPayoutStatus
+  createdAt        DateTime           @default(now()) @db.Timestamptz(3)
+  trip             Trip               @relation(fields: [tripId], references: [id], onDelete: Restrict)
 
   @@index([driverId, status, createdAt], map: "driver_payouts_driver_status_created_at_idx")
   @@map("driver_payouts")
@@ -416,14 +523,14 @@ model TripPayment {
 }
 
 model TripBoardingCode {
-  id        String   @id @default(uuid()) @db.Uuid
-  tripId    String   @unique(map: "trip_boarding_codes_trip_id_key") @db.Uuid
-  codeHash  String   @db.Char(64)
-  attempts  Int      @default(0)
-  expiresAt DateTime @db.Timestamptz(3)
+  id        String    @id @default(uuid()) @db.Uuid
+  tripId    String    @unique(map: "trip_boarding_codes_trip_id_key") @db.Uuid
+  codeHash  String    @db.Char(64)
+  attempts  Int       @default(0)
+  expiresAt DateTime  @db.Timestamptz(3)
   usedAt    DateTime? @db.Timestamptz(3)
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  trip      Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
 
   @@index([expiresAt], map: "trip_boarding_codes_expires_at_idx")
   @@map("trip_boarding_codes")
@@ -455,24 +562,24 @@ model CityCommissionRate {
 }
 
 model RealtimeRoomSequence {
-  room       String   @id @db.VarChar(128)
-  lastValue  Int      @default(0)
-  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+  room      String   @id @db.VarChar(128)
+  lastValue Int      @default(0)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   @@map("realtime_room_sequences")
 }
 
 model RealtimeOutboxEvent {
-  id          String                @id @default(uuid()) @db.Uuid
-  room        String                @db.VarChar(128)
+  id          String               @id @default(uuid()) @db.Uuid
+  room        String               @db.VarChar(128)
   eventType   RealtimeEventType
   sequence    Int
   payload     Json
-  status      RealtimeOutboxStatus  @default(PENDING)
-  attempts    Int                   @default(0)
-  availableAt DateTime              @default(now()) @db.Timestamptz(3)
-  deliveredAt DateTime?             @db.Timestamptz(3)
-  createdAt   DateTime              @default(now()) @db.Timestamptz(3)
+  status      RealtimeOutboxStatus @default(PENDING)
+  attempts    Int                  @default(0)
+  availableAt DateTime             @default(now()) @db.Timestamptz(3)
+  deliveredAt DateTime?            @db.Timestamptz(3)
+  createdAt   DateTime             @default(now()) @db.Timestamptz(3)
 
   @@unique([room, sequence], map: "realtime_outbox_events_room_sequence_key")
   @@index([status, availableAt], map: "realtime_outbox_events_status_available_at_idx")
@@ -481,21 +588,21 @@ model RealtimeOutboxEvent {
 }
 
 model DriverBid {
-  id                       String          @id @default(uuid()) @db.Uuid
-  tripId                   String          @db.Uuid
-  driverId                 String          @db.Uuid
-  vehicleId                String          @db.Uuid
-  offeredPriceKopecks      Int
-  estimatedPickupSeconds   Int
-  distanceToPickupMeters   Int
-  status                   DriverBidStatus @default(ACTIVE)
-  expiresAt                DateTime        @db.Timestamptz(3)
-  createdAt                DateTime        @default(now()) @db.Timestamptz(3)
-  updatedAt                DateTime        @updatedAt @db.Timestamptz(3)
-  version                  Int             @default(0)
-  trip                     Trip            @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  driver                   DriverProfile   @relation(fields: [driverId], references: [userId], onDelete: Cascade)
-  vehicle                  Vehicle         @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  id                     String          @id @default(uuid()) @db.Uuid
+  tripId                 String          @db.Uuid
+  driverId               String          @db.Uuid
+  vehicleId              String          @db.Uuid
+  offeredPriceKopecks    Int
+  estimatedPickupSeconds Int
+  distanceToPickupMeters Int
+  status                 DriverBidStatus @default(ACTIVE)
+  expiresAt              DateTime        @db.Timestamptz(3)
+  createdAt              DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt              DateTime        @updatedAt @db.Timestamptz(3)
+  version                Int             @default(0)
+  trip                   Trip            @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  driver                 DriverProfile   @relation(fields: [driverId], references: [userId], onDelete: Cascade)
+  vehicle                Vehicle         @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
 
   @@index([tripId, status, expiresAt], map: "driver_bids_trip_status_expires_at_idx")
   @@index([driverId, status], map: "driver_bids_driver_status_idx")
@@ -504,30 +611,30 @@ model DriverBid {
 }
 
 model DispatchAttempt {
-  id                String               @id @default(uuid()) @db.Uuid
-  tripId            String               @db.Uuid
-  radiusMeters      Int
-  candidateCount    Int
-  redispatchReason  String?              @db.VarChar(512)
-  createdAt         DateTime             @default(now()) @db.Timestamptz(3)
-  trip              Trip                 @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  logs              DispatchAttemptLog[]
+  id               String               @id @default(uuid()) @db.Uuid
+  tripId           String               @db.Uuid
+  radiusMeters     Int
+  candidateCount   Int
+  redispatchReason String?              @db.VarChar(512)
+  createdAt        DateTime             @default(now()) @db.Timestamptz(3)
+  trip             Trip                 @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  logs             DispatchAttemptLog[]
 
   @@index([tripId, createdAt], map: "dispatch_attempts_trip_created_at_idx")
   @@map("dispatch_attempts")
 }
 
 model DispatchAttemptLog {
-  id                     String                  @id @default(uuid()) @db.Uuid
-  attemptId              String                  @db.Uuid
-  driverId               String                  @db.Uuid
+  id                     String                   @id @default(uuid()) @db.Uuid
+  attemptId              String                   @db.Uuid
+  driverId               String                   @db.Uuid
   rank                   Int
   distanceMeters         Int
   estimatedPickupSeconds Int
   status                 DispatchAttemptLogStatus @default(CANDIDATE)
-  createdAt              DateTime                @default(now()) @db.Timestamptz(3)
-  attempt                DispatchAttempt         @relation(fields: [attemptId], references: [id], onDelete: Cascade)
-  driver                 DriverProfile           @relation(fields: [driverId], references: [userId], onDelete: Cascade)
+  createdAt              DateTime                 @default(now()) @db.Timestamptz(3)
+  attempt                DispatchAttempt          @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  driver                 DriverProfile            @relation(fields: [driverId], references: [userId], onDelete: Cascade)
 
   @@unique([attemptId, driverId], map: "dispatch_attempt_logs_attempt_driver_key")
   @@index([attemptId, rank], map: "dispatch_attempt_logs_attempt_rank_idx")
@@ -575,4 +682,778 @@ model TripIdempotencyKey {
 
   @@unique([passengerId, key], map: "trip_idempotency_keys_passenger_key_key")
   @@map("trip_idempotency_keys")
+}
+
+enum StoredDocumentStatus {
+  PENDING_UPLOAD
+  UPLOADED
+  DELETED
+}
+
+/**
+ * Metadata for a file in object storage (ObjectStorageProvider). The object
+ * itself never passes through the API — clients upload/download directly
+ * against a presigned URL scoped to `objectKey`, which is a random key, never
+ * the client-supplied original filename.
+ */
+model StoredDocument {
+  id               String               @id @default(uuid()) @db.Uuid
+  ownerId          String               @db.Uuid
+  objectKey        String               @unique(map: "stored_documents_object_key_key") @db.VarChar(512)
+  mimeType         String               @db.VarChar(128)
+  sizeBytes        Int?
+  status           StoredDocumentStatus @default(PENDING_UPLOAD)
+  originalFilename String?              @db.VarChar(255)
+  createdAt        DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime             @updatedAt @db.Timestamptz(3)
+  owner            User                 @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId, createdAt], map: "stored_documents_owner_created_at_idx")
+  @@map("stored_documents")
+}
+
+// ---------------------------------------------------------------------------
+// Driver/vehicle document verification (Task 29). See docs/drivers/*.md and
+// docs/security/document-*.md for the full architecture.
+// ---------------------------------------------------------------------------
+
+enum DriverDocumentType {
+  PASSPORT_MAIN_PAGE
+  PASSPORT_REGISTRATION
+  DRIVER_LICENSE_FRONT
+  DRIVER_LICENSE_BACK
+  PROFILE_PHOTO
+  SELFIE_WITH_DOCUMENT
+  TAX_STATUS_DOCUMENT
+  OTHER
+}
+
+enum VehicleDocumentType {
+  VEHICLE_REGISTRATION_FRONT
+  VEHICLE_REGISTRATION_BACK
+  INSURANCE_POLICY
+  VEHICLE_PHOTO_FRONT
+  VEHICLE_PHOTO_BACK
+  VEHICLE_PHOTO_LEFT
+  VEHICLE_PHOTO_RIGHT
+  VEHICLE_INTERIOR
+  TAXI_LICENSE_FUTURE
+  OTHER
+}
+
+/**
+ * Shared lifecycle for both DriverDocument and VehicleDocument rows.
+ */
+enum DocumentStatus {
+  UPLOADING
+  UPLOADED
+  PROCESSING
+  READY_FOR_REVIEW
+  APPROVED
+  REJECTED
+  EXPIRED
+  REVOKED
+  FAILED_SECURITY_CHECK
+}
+
+/**
+ * Centralized rejection reasons — never a free-text-only rejection, so the client can always render a specific "what to fix" message. OTHER requires rejectionComment.
+ */
+enum DocumentRejectionReasonCode {
+  DOCUMENT_UNREADABLE
+  DOCUMENT_CROPPED
+  DOCUMENT_EXPIRED
+  DOCUMENT_MISMATCH
+  WRONG_DOCUMENT_TYPE
+  PROFILE_PHOTO_MISMATCH
+  DRIVER_LICENSE_INVALID
+  VEHICLE_DATA_MISMATCH
+  VEHICLE_TOO_OLD
+  INSURANCE_EXPIRED
+  SECURITY_CHECK_FAILED
+  DUPLICATE_ACCOUNT
+  OTHER
+}
+
+/**
+ * A driver's single document "slot" for a given type. A re-upload never
+ * mutates an APPROVED row in place — it creates a new DriverDocument row and
+ * a new DocumentVersion tracking it (see DocumentVersion below), so the
+ * previously-approved document keeps gating eligibility until the
+ * replacement is itself approved.
+ */
+model DriverDocument {
+  id                      String                       @id @default(uuid()) @db.Uuid
+  driverId                String                       @db.Uuid
+  type                    DriverDocumentType
+  status                  DocumentStatus               @default(UPLOADING)
+  objectKey               String                       @unique(map: "driver_documents_object_key_key") @db.VarChar(512)
+  previewObjectKey        String?                      @db.VarChar(512)
+  fileNameSanitized       String                       @db.VarChar(255)
+  mimeType                String                       @db.VarChar(128)
+  fileSize                Int
+  documentNumberEncrypted String?                      @db.VarChar(512)
+  documentNumberHash      String?                      @db.VarChar(128)
+  documentNumberLastFour  String?                      @db.VarChar(4)
+  issuedAt                DateTime?                    @db.Date
+  expiresAt               DateTime?                    @db.Date
+  issuingCountry          String                       @default("RU") @db.VarChar(2)
+  rejectionReasonCode     DocumentRejectionReasonCode?
+  rejectionComment        String?                      @db.VarChar(1024)
+  reviewedBy              String?                      @db.Uuid
+  reviewedAt              DateTime?                    @db.Timestamptz(3)
+  createdAt               DateTime                     @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                     @updatedAt @db.Timestamptz(3)
+  version                 Int                          @default(0)
+  driver                  DriverProfile                @relation(fields: [driverId], references: [userId], onDelete: Cascade)
+  reviewer                User?                        @relation("DriverDocumentReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  documentVersions        DocumentVersion[]            @relation("DriverDocumentVersions")
+
+  @@index([driverId, type], map: "driver_documents_driver_type_idx")
+  @@index([status], map: "driver_documents_status_idx")
+  @@index([expiresAt], map: "driver_documents_expires_at_idx")
+  @@index([documentNumberHash], map: "driver_documents_number_hash_idx")
+  @@map("driver_documents")
+}
+
+model VehicleDocument {
+  id                      String                       @id @default(uuid()) @db.Uuid
+  vehicleId               String                       @db.Uuid
+  type                    VehicleDocumentType
+  status                  DocumentStatus               @default(UPLOADING)
+  objectKey               String                       @unique(map: "vehicle_documents_object_key_key") @db.VarChar(512)
+  previewObjectKey        String?                      @db.VarChar(512)
+  fileNameSanitized       String                       @db.VarChar(255)
+  mimeType                String                       @db.VarChar(128)
+  fileSize                Int
+  documentNumberEncrypted String?                      @db.VarChar(512)
+  documentNumberHash      String?                      @db.VarChar(128)
+  documentNumberLastFour  String?                      @db.VarChar(4)
+  issuedAt                DateTime?                    @db.Date
+  expiresAt               DateTime?                    @db.Date
+  issuingCountry          String                       @default("RU") @db.VarChar(2)
+  rejectionReasonCode     DocumentRejectionReasonCode?
+  rejectionComment        String?                      @db.VarChar(1024)
+  reviewedBy              String?                      @db.Uuid
+  reviewedAt              DateTime?                    @db.Timestamptz(3)
+  createdAt               DateTime                     @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime                     @updatedAt @db.Timestamptz(3)
+  version                 Int                          @default(0)
+  vehicle                 Vehicle                      @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  reviewer                User?                        @relation("VehicleDocumentReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  documentVersions        DocumentVersion[]            @relation("VehicleDocumentVersions")
+
+  @@index([vehicleId, type], map: "vehicle_documents_vehicle_type_idx")
+  @@index([status], map: "vehicle_documents_status_idx")
+  @@index([expiresAt], map: "vehicle_documents_expires_at_idx")
+  @@index([documentNumberHash], map: "vehicle_documents_number_hash_idx")
+  @@map("vehicle_documents")
+}
+
+enum DocumentVersionStatus {
+  /** The version currently counted for eligibility/display — exactly one per documentFamily. */
+  ACTIVE
+  /** Was ACTIVE until a later version was approved and took over. */
+  SUPERSEDED
+  /** Uploaded but not yet (or no longer, e.g. rejected) the decided version — see docs/drivers/documents.md. */
+  PENDING_REVIEW
+}
+
+/**
+ * Version-tracking index over DriverDocument/VehicleDocument rows — the
+ * underlying rows are themselves never mutated into a "superseded" state
+ * (DocumentStatus has no such value); this table is what actually answers
+ * "which version is the currently-active one for this driver+type slot".
+ * `documentFamily` groups every version of the same logical document, e.g.
+ * `driver:<driverId>:<type>` or `vehicle:<vehicleId>:<type>`.
+ */
+model DocumentVersion {
+  id                String                @id @default(uuid()) @db.Uuid
+  documentFamily    String                @db.VarChar(160)
+  versionNumber     Int
+  status            DocumentVersionStatus @default(PENDING_REVIEW)
+  driverDocumentId  String?               @db.Uuid
+  vehicleDocumentId String?               @db.Uuid
+  createdAt         DateTime              @default(now()) @db.Timestamptz(3)
+  supersededAt      DateTime?             @db.Timestamptz(3)
+  driverDocument    DriverDocument?       @relation("DriverDocumentVersions", fields: [driverDocumentId], references: [id], onDelete: Cascade)
+  vehicleDocument   VehicleDocument?      @relation("VehicleDocumentVersions", fields: [vehicleDocumentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentFamily, versionNumber], map: "document_versions_family_version_key")
+  @@index([documentFamily, status], map: "document_versions_family_status_idx")
+  @@map("document_versions")
+}
+
+enum VerificationCaseStatus {
+  CREATED
+  QUEUED
+  ASSIGNED
+  IN_REVIEW
+  CHANGES_REQUESTED
+  APPROVED
+  REJECTED
+  CANCELLED
+  ESCALATED
+}
+
+enum VerificationCaseDecision {
+  APPROVED
+  REJECTED
+  CHANGES_REQUESTED
+}
+
+enum VerificationCasePriority {
+  NORMAL
+  HIGH
+}
+
+/**
+ * One case per verification submission attempt. `submittedSnapshot` freezes
+ * the profile/vehicle/document state at submission time for audit purposes
+ * (what the admin actually reviewed, even if the driver's live profile
+ * changes later). Application code (VerificationSubmissionService) enforces
+ * "one active case per driver" — CREATED/QUEUED/ASSIGNED/IN_REVIEW/
+ * CHANGES_REQUESTED/ESCALATED count as active; there is deliberately no DB
+ * partial-unique-index for this (would require hand-written migration SQL)
+ * — see docs/drivers/verification.md for the trade-off.
+ */
+model VerificationCase {
+  id                   String                        @id @default(uuid()) @db.Uuid
+  driverId             String                        @db.Uuid
+  status               VerificationCaseStatus        @default(CREATED)
+  submittedSnapshot    Json
+  duplicateCheckResult Json?
+  assignedAdminId      String?                       @db.Uuid
+  priority             VerificationCasePriority      @default(NORMAL)
+  createdAt            DateTime                      @default(now()) @db.Timestamptz(3)
+  assignedAt           DateTime?                     @db.Timestamptz(3)
+  reviewedAt           DateTime?                     @db.Timestamptz(3)
+  completedAt          DateTime?                     @db.Timestamptz(3)
+  decision             VerificationCaseDecision?
+  decisionReasonCodes  DocumentRejectionReasonCode[]
+  publicComment        String?                       @db.VarChar(1024)
+  internalComment      String?                       @db.VarChar(2048)
+  version              Int                           @default(0)
+  driver               DriverProfile                 @relation(fields: [driverId], references: [userId], onDelete: Cascade)
+  assignedAdmin        User?                         @relation("VerificationCaseAssignee", fields: [assignedAdminId], references: [id], onDelete: SetNull)
+
+  @@index([status], map: "verification_cases_status_idx")
+  @@index([driverId, status], map: "verification_cases_driver_status_idx")
+  @@map("verification_cases")
+}
+
+enum DriverConsentType {
+  PERSONAL_DATA_PROCESSING
+  DOCUMENT_PROCESSING
+  BIOMETRIC_PROCESSING_FUTURE
+  TERMS_OF_SERVICE
+  DRIVER_PARTNER_AGREEMENT
+}
+
+/**
+ * Real biometric processing is not implemented (Task 29 explicitly excludes it) — BIOMETRIC_PROCESSING_FUTURE exists only as a reserved value for if/when it is.
+ */
+model DriverConsent {
+  id              String            @id @default(uuid()) @db.Uuid
+  userId          String            @db.Uuid
+  consentType     DriverConsentType
+  documentVersion String            @db.VarChar(32)
+  acceptedAt      DateTime          @default(now()) @db.Timestamptz(3)
+  ipHash          String?           @db.VarChar(128)
+  deviceId        String?           @db.VarChar(255)
+  revokedAt       DateTime?         @db.Timestamptz(3)
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, consentType], map: "driver_consents_user_type_idx")
+  @@map("driver_consents")
+}
+
+enum DuplicateMatchResult {
+  NO_MATCH
+  POSSIBLE_MATCH
+  STRONG_MATCH
+  MANUAL_REVIEW_REQUIRED
+}
+
+enum DeletionQueueStatus {
+  PENDING
+  LEGAL_HOLD
+  DELETED
+  CANCELLED
+}
+
+/**
+ * Retention/deletion queue (Task 29 section 24) — nothing is ever deleted
+ * immediately on request; it is queued here and only actually deleted once
+ * `eligibleAt` has passed and status is still PENDING (never LEGAL_HOLD).
+ * The actual retention durations are configuration, not a legal
+ * determination made in code — see docs/decisions/driver-legal-requirements.md.
+ */
+model DocumentDeletionQueueEntry {
+  id              String              @id @default(uuid()) @db.Uuid
+  documentType    String              @db.VarChar(16)
+  documentId      String              @db.Uuid
+  reason          String              @db.VarChar(64)
+  eligibleAt      DateTime            @db.Timestamptz(3)
+  status          DeletionQueueStatus @default(PENDING)
+  legalHoldReason String?             @db.VarChar(255)
+  createdAt       DateTime            @default(now()) @db.Timestamptz(3)
+  processedAt     DateTime?           @db.Timestamptz(3)
+
+  @@index([status, eligibleAt], map: "document_deletion_queue_status_eligible_idx")
+  @@map("document_deletion_queue")
+}
+
+enum OtpPurpose {
+  LOGIN
+  DRIVER_REGISTRATION
+  PHONE_CHANGE
+  SENSITIVE_ACTION
+}
+
+enum OtpStatus {
+  CREATED
+  SENDING
+  SENT
+  DELIVERED
+  FAILED
+  VERIFIED
+  EXPIRED
+  BLOCKED
+  CONSUMED
+}
+
+enum VerificationChannel {
+  SMS
+  FLASH_CALL
+  INCOMING_CALL
+  STAGING
+}
+
+/**
+ * One row per OTP request — history/analytics/delivery-status only. The
+ * plaintext code is never stored here (only `codeHash`); `phoneHash` (not
+ * the raw phone) is stored too, so this table stays safe to query for
+ * abuse analytics without doubling as another place the phone number
+ * lives in plaintext. OtpService owns the actual live code/attempts state
+ * in Redis (see docs/auth/otp-architecture.md) — this table is the
+ * durable record of what happened, not the source of truth for an
+ * in-flight verification.
+ */
+model OtpRequest {
+  id                String              @id @default(uuid()) @db.Uuid
+  phoneHash         String              @db.VarChar(128)
+  purpose           OtpPurpose
+  channel           VerificationChannel
+  codeHash          String              @db.VarChar(255)
+  status            OtpStatus           @default(CREATED)
+  expiresAt         DateTime            @db.Timestamptz(3)
+  attemptsUsed      Int                 @default(0)
+  maxAttempts       Int
+  resendAvailableAt DateTime            @db.Timestamptz(3)
+  createdAt         DateTime            @default(now()) @db.Timestamptz(3)
+  verifiedAt        DateTime?           @db.Timestamptz(3)
+  consumedAt        DateTime?           @db.Timestamptz(3)
+  providerMessageId String?             @db.VarChar(128)
+  providerStatus    String?             @db.VarChar(32)
+
+  @@index([phoneHash, purpose, createdAt], map: "otp_requests_phone_purpose_created_idx")
+  @@index([status], map: "otp_requests_status_idx")
+  @@index([providerMessageId], map: "otp_requests_provider_message_id_idx")
+  @@map("otp_requests")
+}
+
+enum SecurityEventType {
+  OTP_BRUTE_FORCE_SUSPECTED
+  REFRESH_TOKEN_REUSE
+  PHONE_BLOCKED
+  DEVICE_BLOCKED
+  PROVIDER_CIRCUIT_OPEN
+  PUSH_TOKEN_MASS_REGISTRATION_SUSPECTED
+}
+
+/**
+ * Security-relevant events with no raw phone number or OTP in the payload.
+ */
+model SecurityEvent {
+  id        String            @id @default(uuid()) @db.Uuid
+  type      SecurityEventType
+  phoneHash String?           @db.VarChar(128)
+  userId    String?           @db.Uuid
+  deviceId  String?           @db.VarChar(255)
+  ipHash    String?           @db.VarChar(128)
+  metadata  Json
+  createdAt DateTime          @default(now()) @db.Timestamptz(3)
+
+  @@index([type, createdAt], map: "security_events_type_created_idx")
+  @@index([phoneHash, createdAt], map: "security_events_phone_created_idx")
+  @@map("security_events")
+}
+
+/**
+ * A temporary (or, for a manual admin action, indefinite-until-unblocked)
+ * hold on a phone number or device. Automatic blocks (progressive OTP
+ * abuse protection) always carry an `expiresAt` — nothing here is ever
+ * permanent by automation, only a human via the admin panel can leave one
+ * open-ended, and every unblock is audited.
+ */
+model AuthBlock {
+  id                 String    @id @default(uuid()) @db.Uuid
+  phoneHash          String?   @db.VarChar(128)
+  deviceId           String?   @db.VarChar(255)
+  reason             String    @db.VarChar(255)
+  createdByAdminId   String?   @db.Uuid
+  blockedAt          DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt          DateTime? @db.Timestamptz(3)
+  unblockedAt        DateTime? @db.Timestamptz(3)
+  unblockedByAdminId String?   @db.Uuid
+
+  @@index([phoneHash, unblockedAt], map: "auth_blocks_phone_active_idx")
+  @@index([deviceId, unblockedAt], map: "auth_blocks_device_active_idx")
+  @@map("auth_blocks")
+}
+
+/**
+ * Idempotency guard for SMS.RU webhook deliveries — the provider may
+ * redeliver the same event, and `rawEventHash` (a hash of the raw request
+ * body) being unique means a duplicate insert simply fails instead of
+ * processing the event twice.
+ */
+model SmsWebhookEvent {
+  id                String    @id @default(uuid()) @db.Uuid
+  provider          String    @db.VarChar(32)
+  rawEventHash      String    @unique(map: "sms_webhook_events_raw_event_hash_key") @db.VarChar(64)
+  providerMessageId String?   @db.VarChar(128)
+  status            String    @db.VarChar(32)
+  receivedAt        DateTime  @default(now()) @db.Timestamptz(3)
+  processedAt       DateTime? @db.Timestamptz(3)
+
+  @@index([providerMessageId], map: "sms_webhook_events_provider_message_id_idx")
+  @@map("sms_webhook_events")
+}
+
+// ---------------------------------------------------------------------------
+// Notifications (Task 28): push delivery + an in-app inbox that survives
+// even when push itself fails or is disabled. See docs/notifications/*.md.
+// Push is never the source of truth — opening a notification always
+// re-syncs from REST/WebSocket; these tables exist to get the user's
+// attention and to make delivery auditable, not to hold live trip state.
+// ---------------------------------------------------------------------------
+
+enum PushPlatform {
+  ANDROID
+  IOS
+}
+
+enum PushApplication {
+  PASSENGER
+  DRIVER
+}
+
+enum PushProviderType {
+  DEVELOPMENT
+  STAGING
+  FCM
+  APNS
+}
+
+enum PushTokenStatus {
+  ACTIVE
+  INVALID
+  REVOKED
+  EXPIRED
+}
+
+/**
+ * Mirrors AppEnvironment (packages/config) as its own Prisma enum — kept
+ * separate so a raw token's environment is a durable, queryable column
+ * rather than something inferred at read time. Always set from the
+ * server's own `app.appEnvironment` at registration, never trusted from
+ * the client — see docs/notifications/device-tokens.md for why that's
+ * what actually prevents a production token being registered in staging.
+ */
+enum PushEnvironment {
+  DEVELOPMENT
+  STAGING
+  PRODUCTION
+}
+
+enum NotificationType {
+  DRIVER_NEW_TRIP_AVAILABLE
+  DRIVER_BID_ACCEPTED
+  DRIVER_BID_REJECTED
+  DRIVER_TRIP_CANCELLED
+  DRIVER_PAYMENT_RESERVED
+  DRIVER_PICKUP_REMINDER
+  DRIVER_LOCATION_DEGRADED
+  DRIVER_DOCUMENT_EXPIRING
+  DRIVER_ACCOUNT_APPROVED
+  DRIVER_ACCOUNT_REJECTED
+  DRIVER_PAYOUT_COMPLETED
+  DRIVER_PAYOUT_FAILED
+  PASSENGER_BID_RECEIVED
+  PASSENGER_DRIVER_SELECTED
+  PASSENGER_DRIVER_EN_ROUTE
+  PASSENGER_DRIVER_ARRIVED
+  PASSENGER_TRIP_STARTED
+  PASSENGER_TRIP_COMPLETED
+  PASSENGER_TRIP_CANCELLED
+  PASSENGER_PAYMENT_RESERVED
+  PASSENGER_PAYMENT_FAILED
+  PASSENGER_REFUND_COMPLETED
+  SECURITY_SESSION_REVOKED
+  SYSTEM_SERVICE_NOTICE
+}
+
+enum NotificationCategory {
+  TRIP_OFFERS
+  ACTIVE_TRIP
+  PAYMENTS
+  DRIVER_OPERATIONS
+  ACCOUNT
+  SECURITY
+}
+
+enum NotificationStatus {
+  PENDING
+  QUEUED
+  SENT
+  PARTIALLY_SENT
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+/**
+ * CRITICAL is reserved for NotificationCategory.SECURITY events — never assigned to an ordinary trip/bid/payment notification.
+ */
+enum NotificationPriority {
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
+enum NotificationDeliveryStatus {
+  QUEUED
+  SENT
+  PROVIDER_ACCEPTED
+  DELIVERED
+  OPENED
+  RETRY_SCHEDULED
+  FAILED_TEMPORARY
+  FAILED_PERMANENT
+  TOKEN_INVALID
+}
+
+/**
+ * Outbox-row lifecycle, distinct from NotificationStatus (which tracks the rendered Notification, created only once an outbox row is processed).
+ */
+enum NotificationOutboxStatus {
+  PENDING
+  PROCESSING
+  DELIVERED
+  CANCELLED
+  EXPIRED
+  DEAD_LETTER
+}
+
+/**
+ * What a device's lock screen may show for a notification's title/body. Defaults to GENERIC for sensitive categories — see docs/notifications/privacy.md.
+ */
+enum NotificationPreviewMode {
+  FULL
+  GENERIC
+  HIDDEN
+}
+
+/**
+ * A registered push destination. One row per (application, device) — the
+ * same physical phone has independent rows for a passenger install and a
+ * driver install. `encryptedToken` is the only place the raw provider
+ * token is stored (AES-256-GCM, key from PUSH_TOKEN_ENCRYPTION_KEY) and it
+ * is never logged; `tokenHash` (HMAC-SHA256) is what uniqueness and
+ * lookups use instead. Replacing a token (refresh) revokes the old row
+ * rather than updating it in place, preserving delivery history.
+ */
+model DevicePushToken {
+  id                      String                 @id @default(uuid()) @db.Uuid
+  userId                  String                 @db.Uuid
+  deviceSessionId         String                 @db.Uuid
+  deviceId                String                 @db.VarChar(255)
+  application             PushApplication
+  platform                PushPlatform
+  provider                PushProviderType
+  environment             PushEnvironment
+  encryptedToken          String                 @db.Text
+  tokenHash               String                 @unique(map: "device_push_tokens_token_hash_key") @db.VarChar(128)
+  status                  PushTokenStatus        @default(ACTIVE)
+  appVersion              String?                @db.VarChar(32)
+  osVersion               String?                @db.VarChar(32)
+  locale                  String?                @db.VarChar(16)
+  timezone                String?                @db.VarChar(64)
+  notificationsPermission Boolean
+  lastRegisteredAt        DateTime               @default(now()) @db.Timestamptz(3)
+  lastUsedAt              DateTime?              @db.Timestamptz(3)
+  invalidatedAt           DateTime?              @db.Timestamptz(3)
+  invalidationReason      String?                @db.VarChar(64)
+  createdAt               DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime               @updatedAt @db.Timestamptz(3)
+  user                    User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceSession           DeviceSession          @relation(fields: [deviceSessionId], references: [id], onDelete: Cascade)
+  deliveries              NotificationDelivery[]
+
+  @@index([userId], map: "device_push_tokens_user_idx")
+  @@index([deviceSessionId], map: "device_push_tokens_device_session_idx")
+  @@index([status], map: "device_push_tokens_status_idx")
+  @@index([application, environment], map: "device_push_tokens_app_environment_idx")
+  @@map("device_push_tokens")
+}
+
+/**
+ * Transactional outbox for notification-worthy domain events — enqueued in
+ * the same Prisma transaction as the business write it announces (mirrors
+ * RealtimeOutboxEvent's pattern; see RealtimeOutboxService). One row per
+ * intended recipient. `deduplicationKey` is the idempotency guard: the same
+ * source event (e.g. a trip transition retried after a crash) must never
+ * enqueue twice, and the worker also upserts Notification by this same key
+ * so a crash between "Notification created" and "outbox row marked
+ * DELIVERED" can't double-send either.
+ */
+model NotificationOutboxEvent {
+  id               String                   @id @default(uuid()) @db.Uuid
+  type             NotificationType
+  userId           String                   @db.Uuid
+  application      PushApplication
+  entityType       String                   @db.VarChar(32)
+  entityId         String?                  @db.Uuid
+  payload          Json
+  priority         NotificationPriority
+  deduplicationKey String                   @unique(map: "notification_outbox_events_dedup_key_key") @db.VarChar(255)
+  /**
+   * Groups events belonging to the same SUPERSEDE/COLLAPSE_COUNT family (see NotificationService.computeCollapseKey) — never unique, several rows can share one while at most one is still PENDING.
+   */
+  collapseKey      String                   @db.VarChar(255)
+  status           NotificationOutboxStatus @default(PENDING)
+  attempts         Int                      @default(0)
+  maxAttempts      Int
+  availableAt      DateTime                 @default(now()) @db.Timestamptz(3)
+  expiresAt        DateTime?                @db.Timestamptz(3)
+  notificationId   String?                  @db.Uuid
+  lastError        String?                  @db.VarChar(512)
+  createdAt        DateTime                 @default(now()) @db.Timestamptz(3)
+  processedAt      DateTime?                @db.Timestamptz(3)
+
+  @@index([status, availableAt], map: "notification_outbox_events_status_available_at_idx")
+  @@index([userId, type], map: "notification_outbox_events_user_type_idx")
+  @@index([collapseKey, status], map: "notification_outbox_events_collapse_key_status_idx")
+  @@map("notification_outbox_events")
+}
+
+/**
+ * The durable, user-facing notification record — exists independently of
+ * whether push delivery succeeded (see NotificationDelivery), so it can
+ * always be shown in the in-app inbox. `titleTemplate`/`bodyTemplate` hold
+ * the actually-rendered text at send time (not a template key) alongside
+ * `templateVersion`, so historical/admin views show exactly what a user
+ * saw even after a template is edited later.
+ */
+model Notification {
+  id               String                 @id @default(uuid()) @db.Uuid
+  userId           String                 @db.Uuid
+  type             NotificationType
+  application      PushApplication
+  entityType       String                 @db.VarChar(32)
+  entityId         String?                @db.Uuid
+  titleTemplate    String                 @db.VarChar(128)
+  bodyTemplate     String                 @db.VarChar(512)
+  templateVersion  Int
+  payload          Json
+  status           NotificationStatus     @default(PENDING)
+  priority         NotificationPriority
+  deduplicationKey String                 @unique(map: "notifications_dedup_key_key") @db.VarChar(255)
+  scheduledAt      DateTime               @db.Timestamptz(3)
+  createdAt        DateTime               @default(now()) @db.Timestamptz(3)
+  sentAt           DateTime?              @db.Timestamptz(3)
+  deliveredAt      DateTime?              @db.Timestamptz(3)
+  openedAt         DateTime?              @db.Timestamptz(3)
+  /**
+   * Marked via POST .../read or read-all — distinct from openedAt (a push tap), since the in-app inbox can mark something read without the push ever being opened.
+   */
+  readAt           DateTime?              @db.Timestamptz(3)
+  failedAt         DateTime?              @db.Timestamptz(3)
+  expiresAt        DateTime?              @db.Timestamptz(3)
+  user             User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries       NotificationDelivery[]
+
+  @@index([userId, createdAt], map: "notifications_user_created_at_idx")
+  @@index([userId, readAt], map: "notifications_user_read_at_idx")
+  @@index([status], map: "notifications_status_idx")
+  @@map("notifications")
+}
+
+/**
+ * One row per (Notification, DevicePushToken) delivery attempt. Multiple
+ * rows accumulate across retries (see `attempt`). PROVIDER_ACCEPTED means
+ * only that FCM/APNs queued the message — never treated as proof the user
+ * actually saw it; OPENED is the only status that reflects real viewing,
+ * set when the client reports the notificationId back via POST .../opened.
+ */
+model NotificationDelivery {
+  id                String                     @id @default(uuid()) @db.Uuid
+  notificationId    String                     @db.Uuid
+  devicePushTokenId String                     @db.Uuid
+  provider          PushProviderType
+  providerMessageId String?                    @db.VarChar(255)
+  attempt           Int                        @default(1)
+  status            NotificationDeliveryStatus @default(QUEUED)
+  errorCode         String?                    @db.VarChar(64)
+  errorCategory     String?                    @db.VarChar(32)
+  sentAt            DateTime?                  @db.Timestamptz(3)
+  acknowledgedAt    DateTime?                  @db.Timestamptz(3)
+  failedAt          DateTime?                  @db.Timestamptz(3)
+  nextRetryAt       DateTime?                  @db.Timestamptz(3)
+  createdAt         DateTime                   @default(now()) @db.Timestamptz(3)
+  notification      Notification               @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  devicePushToken   DevicePushToken            @relation(fields: [devicePushTokenId], references: [id], onDelete: Cascade)
+
+  @@index([notificationId], map: "notification_deliveries_notification_idx")
+  @@index([devicePushTokenId], map: "notification_deliveries_device_push_token_idx")
+  @@index([status, nextRetryAt], map: "notification_deliveries_status_next_retry_idx")
+  @@map("notification_deliveries")
+}
+
+/**
+ * Per (user, application, category) opt-out. Rows are optional — a missing
+ * row means the category's default (enabled) applies. SECURITY and an
+ * in-progress ACTIVE_TRIP are enforced server-side as always-on regardless
+ * of what's stored here (see NotificationPreferenceService); the OS-level
+ * permission still overrides everything, this only controls in-app intent.
+ */
+model NotificationPreference {
+  userId           String               @db.Uuid
+  application      PushApplication
+  category         NotificationCategory
+  pushEnabled      Boolean              @default(true)
+  soundEnabled     Boolean              @default(true)
+  vibrationEnabled Boolean              @default(true)
+  updatedAt        DateTime             @updatedAt @db.Timestamptz(3)
+  user             User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, application, category])
+  @@map("notification_preferences")
+}
+
+/**
+ * One row per user: how much a sensitive notification's title/body may
+ * reveal on a locked device. Separate from NotificationPreference (which
+ * is per category) since preview mode is a single cross-category privacy
+ * dial, not an on/off switch per event type.
+ */
+model NotificationPrivacySetting {
+  userId      String                  @id @db.Uuid
+  previewMode NotificationPreviewMode @default(GENERIC)
+  updatedAt   DateTime                @updatedAt @db.Timestamptz(3)
+  user        User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_privacy_settings")
 }

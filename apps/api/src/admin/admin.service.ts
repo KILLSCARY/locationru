@@ -79,8 +79,9 @@ export class AdminService {
               id: true,
               brand: true,
               model: true,
-              registrationNumber: true,
+              registrationNumberMasked: true,
               status: true,
+              verificationStatus: true,
             },
           },
         },
@@ -121,7 +122,11 @@ export class AdminService {
           include: {
             driver: { include: { user: { select: { phone: true } } } },
             vehicle: {
-              select: { brand: true, model: true, registrationNumber: true },
+              select: {
+                brand: true,
+                model: true,
+                registrationNumberMasked: true,
+              },
             },
           },
         },
@@ -170,53 +175,6 @@ export class AdminService {
     return this.page(items, total, pagination);
   }
 
-  async reviewDriver(
-    adminId: string,
-    driverId: string,
-    decision: 'APPROVED' | 'REJECTED',
-  ) {
-    return this.prisma.$transaction(async (transaction) => {
-      const driver = await transaction.driverProfile.update({
-        where: { userId: driverId },
-        data: { verificationStatus: decision },
-        include: { user: { select: { phone: true } } },
-      });
-      await transaction.adminAuditLog.create({
-        data: {
-          adminId,
-          action: `DRIVER_${decision}`,
-          targetType: 'DRIVER',
-          targetId: driverId,
-          payload: { decision },
-        },
-      });
-      return driver;
-    });
-  }
-
-  async reviewVehicle(
-    adminId: string,
-    vehicleId: string,
-    decision: 'APPROVED' | 'REJECTED',
-  ) {
-    return this.prisma.$transaction(async (transaction) => {
-      const vehicle = await transaction.vehicle.update({
-        where: { id: vehicleId },
-        data: { status: decision },
-      });
-      await transaction.adminAuditLog.create({
-        data: {
-          adminId,
-          action: `VEHICLE_${decision}`,
-          targetType: 'VEHICLE',
-          targetId: vehicleId,
-          payload: { decision },
-        },
-      });
-      return vehicle;
-    });
-  }
-
   async blockUser(adminId: string, userId: string) {
     if (adminId === userId) {
       throw new ConflictException({
@@ -256,6 +214,104 @@ export class AdminService {
       this.prisma.adminAuditLog.count(),
     ]);
     return this.page(items, total, pagination);
+  }
+
+  /**
+   * A point-in-time snapshot for the "Push notifications" admin section —
+   * counts only, never a phone number/token/raw payload. `/metrics` has the
+   * time-series version of most of this; this endpoint is for a human
+   * glancing at the admin UI, not Prometheus.
+   */
+  async getPushStats() {
+    const [outboxGroups, notificationGroups, tokenGroups] = await Promise.all([
+      this.prisma.notificationOutboxEvent.groupBy({
+        by: ['status'],
+        _count: { _all: true },
+      }),
+      this.prisma.notification.groupBy({
+        by: ['status'],
+        _count: { _all: true },
+      }),
+      this.prisma.devicePushToken.groupBy({
+        by: ['application', 'platform'],
+        where: { status: 'ACTIVE' },
+        _count: { _all: true },
+      }),
+    ]);
+
+    return {
+      outboxByStatus: Object.fromEntries(
+        outboxGroups.map((group) => [group.status, group._count._all]),
+      ),
+      notificationsByStatus: Object.fromEntries(
+        notificationGroups.map((group) => [group.status, group._count._all]),
+      ),
+      activeTokens: tokenGroups.map((group) => ({
+        application: group.application,
+        platform: group.platform,
+        count: group._count._all,
+      })),
+    };
+  }
+
+  async listDeadLetterPush(query: PageQuery) {
+    const pagination = this.pagination(query);
+    const where = { status: 'DEAD_LETTER' as never };
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.notificationOutboxEvent.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: pagination.skip,
+        take: pagination.pageSize,
+        select: {
+          id: true,
+          type: true,
+          application: true,
+          userId: true,
+          attempts: true,
+          maxAttempts: true,
+          lastError: true,
+          createdAt: true,
+          processedAt: true,
+        },
+      }),
+      this.prisma.notificationOutboxEvent.count({ where }),
+    ]);
+    return this.page(items, total, pagination);
+  }
+
+  /**
+   * Requeues a single DEAD_LETTER outbox event for another attempt — the
+   * bounded-retries-then-DEAD_LETTER policy still applies afterwards
+   * (attempts resets to 0, so it gets a fresh run of maxAttempts, not an
+   * unbounded one). The worker's own poll loop picks it up; this only flips
+   * the row back to PENDING.
+   */
+  async retryDeadLetterPush(adminId: string, eventId: string): Promise<void> {
+    const updated = await this.prisma.notificationOutboxEvent.updateMany({
+      where: { id: eventId, status: 'DEAD_LETTER' as never },
+      data: {
+        status: 'PENDING' as never,
+        attempts: 0,
+        availableAt: new Date(),
+        lastError: null,
+      },
+    });
+    if (updated.count === 0) {
+      throw new NotFoundException({
+        code: 'PUSH_EVENT_NOT_RETRYABLE',
+        message: 'Event was not found or is not in DEAD_LETTER state',
+      });
+    }
+    await this.prisma.adminAuditLog.create({
+      data: {
+        adminId,
+        action: 'PUSH_DEAD_LETTER_RETRIED',
+        targetType: 'NotificationOutboxEvent',
+        targetId: eventId,
+        payload: {},
+      },
+    });
   }
 
   private pagination(query: PageQuery) {

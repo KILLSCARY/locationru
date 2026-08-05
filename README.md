@@ -23,6 +23,13 @@ pnpm dev
 Copy-Item .env.example .env
 ```
 
+## Непрерывная интеграция
+
+На каждый pull request и push в `master` GitHub Actions
+(`.github/workflows/ci.yml`) прогоняет проверки backend
+(`format:check`, `lint`, `typecheck`, `test`) и модуля `domain` приложения
+водителя (`:domain:test`, `ktlintCheck`, `detekt`).
+
 ## Команды
 
 - `pnpm dev` — запустить проекты в режиме разработки
@@ -112,9 +119,21 @@ docker compose exec postgres psql -U resilient_taxi -d resilient_taxi \
 - `apps/api` — серверное API
 - `apps/admin-web` — веб-приложение администратора
 - `apps/passenger-mobile` — мобильное приложение пассажира
-- `apps/driver-android` — заготовка отдельного Android-приложения
+- `apps/driver-android` — Android-приложение водителя (Kotlin, Compose)
 - `packages/contracts` — контракты взаимодействия
 - `packages/shared-types` — общие TypeScript-типы
 - `packages/config` — общая конфигурация
 - `infrastructure` — конфигурация Docker, PostgreSQL и Redis
 - `docs` — архитектурная и предметная документация
+
+## Развёртывание
+
+Продовые Docker-топологии и пошаговый гайд по деплою на Yandex Cloud:
+[`docs/deploy/yandex-cloud.md`](docs/deploy/yandex-cloud.md)
+(`docker-compose.prod.yml` — всё на одной ВМ, `docker-compose.managed.yml` —
+с managed-БД).
+
+## Дальнейшее развитие
+
+Текущее состояние и план работ по этапам описаны в
+[`docs/ROADMAP.md`](docs/ROADMAP.md).

@@ -5,11 +5,15 @@ import type { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../database/prisma.service.js';
 import {
   DriverLocationConfidence,
-  DriverStatus,
+  DriverOperationalStatus,
   DriverVerificationStatus,
 } from '../generated/prisma/client.js';
 import { RedisService } from '../redis/redis.service.js';
 import { RealtimeOutboxService } from '../realtime/realtime-outbox.service.js';
+import type {
+  BlockingReason,
+  DriverEligibilityService,
+} from './driver-eligibility.service.js';
 import { DriverService } from './driver.service.js';
 import type { DriverLocationDto } from './dto/driver-location.dto.js';
 
@@ -22,9 +26,8 @@ const driver: AuthenticatedUser = {
 
 class InMemoryPrisma {
   approved = true;
-  approvedVehicle = true;
+  operationalStatus = DriverOperationalStatus.OFFLINE;
   inserted = true;
-  profileStatus = DriverStatus.OFFLINE;
   rawCalls: Array<{ parameters: unknown[]; query: string }> = [];
 
   readonly deviceSession = {
@@ -36,16 +39,23 @@ class InMemoryPrisma {
 
   readonly driverProfile = {
     findUnique: async () => ({
-      status: this.profileStatus,
+      operationalStatus: this.operationalStatus,
       verificationStatus: this.approved
         ? DriverVerificationStatus.APPROVED
         : DriverVerificationStatus.PENDING,
-      vehicles: this.approvedVehicle ? [{ id: 'vehicle-1' }] : [],
     }),
-    update: async ({ data }: { data: { status: DriverStatus } }) => {
-      this.profileStatus = data.status;
-      return { status: this.profileStatus };
+    update: async ({
+      data,
+    }: {
+      data: { operationalStatus: DriverOperationalStatus };
+    }) => {
+      this.operationalStatus = data.operationalStatus;
+      return { operationalStatus: this.operationalStatus };
     },
+  };
+
+  readonly trip = {
+    findFirst: async () => null,
   };
 
   async $queryRawUnsafe<T>(
@@ -54,6 +64,22 @@ class InMemoryPrisma {
   ): Promise<T> {
     this.rawCalls.push({ query, parameters });
     return (this.inserted ? [{ id: 'location-1' }] : []) as T;
+  }
+}
+
+class FakeEligibilityService {
+  eligible = true;
+  blockingReasons: BlockingReason[] = [];
+  approvedVehicleIds = ['vehicle-1'];
+
+  async evaluateDriverEligibility() {
+    return {
+      eligible: this.eligible,
+      blockingReasons: this.blockingReasons,
+      warnings: [] as string[],
+      expiresSoon: false,
+      approvedVehicleIds: this.approvedVehicleIds,
+    };
   }
 }
 
@@ -85,19 +111,20 @@ class InMemoryRedis {
 describe('DriverService', () => {
   let prisma: InMemoryPrisma;
   let redis: InMemoryRedis;
+  let eligibility: FakeEligibilityService;
   let service: DriverService;
 
-  beforeEach(() => {
-    prisma = new InMemoryPrisma();
-    redis = new InMemoryRedis();
-    service = new DriverService(
+  function buildService(
+    overrides: { rateLimitPerMinute?: number } = {},
+  ): DriverService {
+    return new DriverService(
       new ConfigService({
         driverLocations: {
           batchMaxSize: 3,
           futureToleranceSeconds: 300,
           latestPositionTtlSeconds: 300,
           maxPlausibleSpeedMetersPerSecond: 70,
-          rateLimitPerMinute: 10,
+          rateLimitPerMinute: overrides.rateLimitPerMinute ?? 10,
           staleAfterSeconds: 120,
         },
       }),
@@ -106,7 +133,15 @@ describe('DriverService', () => {
       {
         enqueueDriverLocationUpdate: async () => undefined,
       } as unknown as RealtimeOutboxService,
+      eligibility as unknown as DriverEligibilityService,
     );
+  }
+
+  beforeEach(() => {
+    prisma = new InMemoryPrisma();
+    redis = new InMemoryRedis();
+    eligibility = new FakeEligibilityService();
+    service = buildService();
   });
 
   it('requires an approved driver before accepting a position', async () => {
@@ -123,14 +158,23 @@ describe('DriverService', () => {
   });
 
   it('requires an approved vehicle before going online', async () => {
-    prisma.approvedVehicle = false;
+    eligibility.eligible = false;
+    eligibility.blockingReasons = ['NO_APPROVED_VEHICLE'];
 
     const error = await captureError(service.goOnline(driver));
 
     expect(error.getStatus()).toBe(409);
     expect(error.getResponse()).toMatchObject({
-      code: 'APPROVED_VEHICLE_REQUIRED',
+      code: 'DRIVER_NOT_ELIGIBLE',
+      blockingReasons: ['NO_APPROVED_VEHICLE'],
     });
+  });
+
+  it('goes online once eligible', async () => {
+    const result = await service.goOnline(driver);
+
+    expect(result.status).toBe(DriverOperationalStatus.ONLINE);
+    expect(prisma.operationalStatus).toBe(DriverOperationalStatus.ONLINE);
   });
 
   it('persists history and computes server confidence instead of trusting the client', async () => {
@@ -174,23 +218,7 @@ describe('DriverService', () => {
   });
 
   it('limits the number of accepted location points per minute', async () => {
-    service = new DriverService(
-      new ConfigService({
-        driverLocations: {
-          batchMaxSize: 3,
-          futureToleranceSeconds: 300,
-          latestPositionTtlSeconds: 300,
-          maxPlausibleSpeedMetersPerSecond: 70,
-          rateLimitPerMinute: 1,
-          staleAfterSeconds: 120,
-        },
-      }),
-      prisma as unknown as PrismaService,
-      redis as unknown as RedisService,
-      {
-        enqueueDriverLocationUpdate: async () => undefined,
-      } as unknown as RealtimeOutboxService,
-    );
+    service = buildService({ rateLimitPerMinute: 1 });
 
     const error = await captureError(
       service.submitLocationBatch(driver, {
@@ -214,6 +242,39 @@ describe('DriverService', () => {
 
     expect(error.getStatus()).toBe(422);
     expect(error.getResponse()).toMatchObject({ code: 'LOCATION_IN_FUTURE' });
+  });
+
+  it('fans a location update out to the assigned trip room, not just the driver room', async () => {
+    prisma.trip.findFirst = async () => ({ id: 'trip-42' });
+    const calls: Array<[unknown, string | null | undefined]> = [];
+    service = new DriverService(
+      new ConfigService({
+        driverLocations: {
+          batchMaxSize: 3,
+          futureToleranceSeconds: 300,
+          latestPositionTtlSeconds: 300,
+          maxPlausibleSpeedMetersPerSecond: 70,
+          rateLimitPerMinute: 10,
+          staleAfterSeconds: 120,
+        },
+      }),
+      prisma as unknown as PrismaService,
+      redis as unknown as RedisService,
+      {
+        enqueueDriverLocationUpdate: async (
+          input: unknown,
+          activeTripId?: string | null,
+        ) => {
+          calls.push([input, activeTripId]);
+        },
+      } as unknown as RealtimeOutboxService,
+      eligibility as unknown as DriverEligibilityService,
+    );
+
+    await service.submitLocation(driver, location());
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[1]).toBe('trip-42');
   });
 
   it('rejects a position that implies an impossible speed', async () => {

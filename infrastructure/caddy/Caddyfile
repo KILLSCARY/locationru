@@ -1,0 +1,12 @@
+# Automatic HTTPS reverse proxy for the API. Caddy obtains and renews a
+# Let's Encrypt certificate for $DOMAIN. WebSocket upgrades (socket.io realtime)
+# are proxied transparently.
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy api:3000
+}

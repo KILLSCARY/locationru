@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- minSdk is 26 (Yandex MapKit's own requirement), which is exactly
+     adaptive icons' minimum — no legacy PNG fallback needed. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/staging_badge_background" />
+    <foreground android:drawable="@drawable/ic_launcher_staging_foreground" />
+</adaptive-icon>

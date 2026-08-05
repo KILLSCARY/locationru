@@ -7,3 +7,15 @@ process.env.AUTH_JWT_SECRET ??=
   'test-access-token-secret-that-is-at-least-32-characters';
 process.env.AUTH_OTP_HASH_SECRET ??=
   'test-otp-hash-secret-that-is-at-least-32-characters';
+process.env.TRIPS_BOARDING_CODE_HASH_SECRET ??=
+  'test-boarding-code-secret-that-is-at-least-32-characters';
+process.env.PUSH_TOKEN_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString(
+  'base64',
+);
+process.env.PUSH_TOKEN_HASH_SECRET ??=
+  'test-push-token-hash-secret-that-is-at-least-32-characters';
+process.env.DRIVER_DATA_ENCRYPTION_KEY ??= Buffer.alloc(32, 9).toString(
+  'base64',
+);
+process.env.DRIVER_DATA_HASH_SECRET ??=
+  'test-driver-data-hash-secret-that-is-at-least-32-characters';

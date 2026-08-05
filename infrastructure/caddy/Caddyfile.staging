@@ -1,0 +1,78 @@
+# Hardened reverse proxy for the staging environment.
+#
+# - Automatic HTTPS (Let's Encrypt) for both domains; Caddy redirects
+#   plain HTTP to HTTPS automatically for any site block with a hostname.
+# - WebSocket upgrades (socket.io realtime) proxy transparently through
+#   `reverse_proxy` — no special config needed for the Upgrade header.
+# - Real client IP is forwarded via the standard X-Forwarded-* headers,
+#   which reverse_proxy sets by default.
+#
+# Rate limiting requires the caddy-ratelimit plugin (see
+# infrastructure/caddy/Dockerfile) — verify the `rate_limit` directive
+# syntax below against that plugin's current README before first deploy;
+# plugin config shapes can change between releases and this hasn't been
+# exercised against a running instance in this environment.
+{
+	email {$ACME_EMAIL}
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
+
+{$STAGING_API_DOMAIN} {
+	import security_headers
+	encode zstd br gzip
+
+	request_body {
+		max_size {$HTTP_BODY_LIMIT_BYTES:262144}
+	}
+
+	rate_limit {
+		zone auth {
+			match {
+				path /api/v1/auth/*
+			}
+			key {remote_host}
+			events 10
+			window 1m
+		}
+		zone address_suggestions {
+			match {
+				path /api/v1/maps/address-suggestions
+			}
+			key {remote_host}
+			events 30
+			window 1m
+		}
+	}
+
+	# socket.io realtime — same proxy handles HTTP and the WS upgrade.
+	reverse_proxy /realtime/* api:3000 {
+		transport http {
+			response_header_timeout 60s
+		}
+	}
+
+	reverse_proxy api:3000
+}
+
+{$STAGING_ADMIN_DOMAIN} {
+	import security_headers
+	encode zstd br gzip
+
+	request_body {
+		max_size {$HTTP_BODY_LIMIT_BYTES:262144}
+	}
+
+	reverse_proxy admin-web:3000
+}

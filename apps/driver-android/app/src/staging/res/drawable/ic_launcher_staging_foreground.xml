@@ -1,0 +1,14 @@
+<!-- Placeholder foreground for the staging launcher icon: a simple white
+     ring, not final design (explicitly out of scope for this task) — it
+     only needs to read as visually distinct from whatever the production
+     icon ends up being. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M54,24 A30,30 0 1 1 53.9,24 Z M54,40 A14,14 0 1 0 54.1,40 Z" />
+</vector>

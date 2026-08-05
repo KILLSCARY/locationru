@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import {
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -11,12 +12,30 @@ import { PrismaService } from '../database/prisma.service.js';
 import {
   type Prisma,
   DispatchAttemptLogStatus,
+  NotificationType,
   TripStatus,
 } from '../generated/prisma/client.js';
+import { NotificationOutboxService } from '../notifications/notification-outbox.service.js';
+import { NotificationService } from '../notifications/notification.service.js';
+import { formatPriceKopecks } from '../notifications/templates/notification-template.service.js';
+import {
+  ROUTE_ESTIMATOR,
+  type RouteEstimator,
+  type RouteLeg,
+} from './routing/route-estimator.interface.js';
 
 interface DispatchTripRow {
   id: string;
   status: TripStatus;
+  passengerPriceKopecks: number;
+  finalPriceKopecks: number | null;
+}
+
+interface DispatchCandidateRow extends UnrankedDispatchCandidate {
+  driverLongitude: number;
+  driverLatitude: number;
+  pickupLongitude: number;
+  pickupLatitude: number;
 }
 
 export interface DispatchCandidate {
@@ -59,6 +78,9 @@ export class DispatchService {
   constructor(
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
+    @Inject(ROUTE_ESTIMATOR) private readonly routeEstimator: RouteEstimator,
+    private readonly notifications: NotificationService,
+    private readonly notificationOutbox: NotificationOutboxService,
   ) {}
 
   async findCandidates(request: DispatchRequest): Promise<DispatchResult> {
@@ -80,7 +102,7 @@ export class DispatchService {
           Boolean(redispatchReason),
         );
         if (found.length) {
-          candidates = rankDispatchCandidates(found);
+          candidates = rankDispatchCandidates(await this.refineEtas(found));
           radiusMeters = radius;
           break;
         }
@@ -113,6 +135,7 @@ export class DispatchService {
             status: DispatchAttemptLogStatus.CANDIDATE,
           })),
         });
+        await this.notifyCandidates(transaction, trip, attempt.id, candidates);
       }
 
       return {
@@ -128,7 +151,7 @@ export class DispatchService {
     tripId: string,
   ): Promise<DispatchTripRow> {
     const trips = await transaction.$queryRawUnsafe<DispatchTripRow[]>(
-      `SELECT "id", "status"
+      `SELECT "id", "status", "passengerPriceKopecks", "finalPriceKopecks"
        FROM "trips"
        WHERE "id" = $1
        FOR UPDATE`,
@@ -154,12 +177,78 @@ export class DispatchService {
     return trip;
   }
 
+  /**
+   * Pushed inside the same transaction as the dispatch attempt itself
+   * (unlike TripLifecycleService's best-effort enqueue), since this
+   * transaction is already owned end-to-end by DispatchService — a genuine
+   * transactional-outbox insert, not a following best-effort call. One
+   * push per candidate per attempt; a later attempt for the same trip
+   * (redispatch) naturally supersedes an earlier still-PENDING push to the
+   * same driver via NotificationService's SUPERSEDE collapse key.
+   */
+  private async notifyCandidates(
+    transaction: Prisma.TransactionClient,
+    trip: DispatchTripRow,
+    attemptId: string,
+    candidates: DispatchCandidate[],
+  ): Promise<void> {
+    const formattedPrice = formatPriceKopecks(
+      trip.finalPriceKopecks ?? trip.passengerPriceKopecks,
+    );
+    for (const candidate of candidates) {
+      const draft = this.notifications.createDraft({
+        userId: candidate.driverId,
+        type: NotificationType.DRIVER_NEW_TRIP_AVAILABLE,
+        application: 'DRIVER' as never,
+        entityType: 'TRIP',
+        entityId: trip.id,
+        idempotencyKey: `${attemptId}:${candidate.driverId}`,
+        templateParams: { tripId: trip.id, formattedPrice },
+      });
+      await this.notificationOutbox.enqueue(transaction, draft);
+    }
+  }
+
+  /**
+   * Refines the straight-line ETA of the shortlisted candidates through the
+   * configured route estimator, then returns candidates ready to be ranked.
+   */
+  private async refineEtas(
+    rows: DispatchCandidateRow[],
+  ): Promise<UnrankedDispatchCandidate[]> {
+    const legs: RouteLeg[] = rows.map((row) => ({
+      driverId: row.driverId,
+      straightLineSeconds: row.estimatedPickupSeconds,
+      origin: { longitude: row.driverLongitude, latitude: row.driverLatitude },
+      destination: {
+        longitude: row.pickupLongitude,
+        latitude: row.pickupLatitude,
+      },
+    }));
+
+    const estimates = await this.routeEstimator.estimate(legs);
+    const secondsByDriver = new Map(
+      estimates.map((estimate) => [
+        estimate.driverId,
+        estimate.estimatedPickupSeconds,
+      ]),
+    );
+
+    return rows.map((row) => ({
+      driverId: row.driverId,
+      distanceMeters: row.distanceMeters,
+      estimatedPickupSeconds:
+        secondsByDriver.get(row.driverId) ?? row.estimatedPickupSeconds,
+      rating: row.rating,
+    }));
+  }
+
   private async findCandidatesWithinRadius(
     transaction: Prisma.TransactionClient,
     tripId: string,
     radiusMeters: number,
     allowRedispatch: boolean,
-  ): Promise<UnrankedDispatchCandidate[]> {
+  ): Promise<DispatchCandidateRow[]> {
     const freshLocationSeconds = this.configService.getOrThrow<number>(
       'dispatch.locationMaxAgeSeconds',
     );
@@ -180,7 +269,7 @@ export class DispatchService {
              AND "previousLog"."driverId" = "driver_profiles"."userId"
          )`;
 
-    return transaction.$queryRawUnsafe<UnrankedDispatchCandidate[]>(
+    return transaction.$queryRawUnsafe<DispatchCandidateRow[]>(
       `WITH "pickup" AS (
           SELECT "pickupLocation"
           FROM "trips"
@@ -199,7 +288,11 @@ export class DispatchService {
           CEIL(
             ST_Distance("latestLocations"."location", "pickup"."pickupLocation") / $4
           )::integer AS "estimatedPickupSeconds",
-          "driver_profiles"."rating"::double precision AS "rating"
+          "driver_profiles"."rating"::double precision AS "rating",
+          ST_X("latestLocations"."location"::geometry)::double precision AS "driverLongitude",
+          ST_Y("latestLocations"."location"::geometry)::double precision AS "driverLatitude",
+          ST_X("pickup"."pickupLocation"::geometry)::double precision AS "pickupLongitude",
+          ST_Y("pickup"."pickupLocation"::geometry)::double precision AS "pickupLatitude"
        FROM "driver_profiles"
        INNER JOIN "latestLocations"
          ON "latestLocations"."driverId" = "driver_profiles"."userId"

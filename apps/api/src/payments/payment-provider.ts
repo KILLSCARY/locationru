@@ -14,6 +14,8 @@ export type ProviderWebhook = {
 };
 
 export interface PaymentProvider {
+  /** Provider identifier stored on payment intents, payouts and webhook events. */
+  readonly name: string;
   cancelPayment(
     paymentId: string,
     idempotencyKey: string,

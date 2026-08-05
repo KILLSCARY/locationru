@@ -5,8 +5,12 @@ import { PrismaClient } from '../src/generated/prisma/client.js';
 const E164_PHONE_PATTERN = /^\+[1-9]\d{7,14}$/;
 
 async function seed(): Promise<void> {
-  if (process.env.NODE_ENV !== 'development') {
-    console.log('Seed skipped: NODE_ENV is not development');
+  const appEnvironment =
+    process.env.APP_ENV ?? process.env.NODE_ENV ?? 'development';
+  if (appEnvironment !== 'development') {
+    console.log(
+      `Seed skipped: APP_ENV is "${appEnvironment}", not development`,
+    );
     return;
   }
 

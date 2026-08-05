@@ -26,6 +26,7 @@ import {
 } from './driver.service.js';
 import { BatchDriverLocationDto } from './dto/batch-driver-location.dto.js';
 import { DriverLocationDto } from './dto/driver-location.dto.js';
+import { GoOnlineDto } from './dto/go-online.dto.js';
 
 @ApiTags('drivers')
 @ApiBearerAuth()
@@ -40,8 +41,9 @@ export class DriverController {
   @ApiOperation({ summary: 'Set the approved driver online' })
   online(
     @CurrentUser() user: AuthenticatedUser,
+    @Body() input: GoOnlineDto,
   ): Promise<DriverStatusResponse> {
-    return this.driverService.goOnline(user);
+    return this.driverService.goOnline(user, input);
   }
 
   @Post('me/offline')

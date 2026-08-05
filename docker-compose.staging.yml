@@ -1,0 +1,231 @@
+name: resilient-taxi-staging
+
+# Staging topology: api, admin-web, postgres+PostGIS, redis, MinIO (S3-compatible
+# object storage), and a hardened Caddy reverse proxy in front of everything.
+# Nothing except the proxy is published on a host port — Postgres/Redis/MinIO
+# are only reachable from the `data` network, which the proxy is not part of.
+#
+# Usage:
+#   cp .env.staging.example .env.staging   # then fill in secrets/domains
+#   pnpm staging:up      # docker compose -f docker-compose.staging.yml up -d --build
+#   pnpm staging:seed
+#   pnpm staging:smoke
+
+services:
+  postgres:
+    image: postgis/postgis:17-3.5
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks: [data]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1g
+
+  redis:
+    image: redis:7.4.9-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    # protected-mode + requirepass so an accidental port publish is still
+    # locked down; appendonly for persistence; maxmemory+noeviction is
+    # deliberate for staging (correctness over cache-style eviction, given
+    # OTP/session/rate-limit data lives here, not just disposable caches).
+    command:
+      [
+        'redis-server',
+        '--appendonly',
+        'yes',
+        '--protected-mode',
+        'yes',
+        '--requirepass',
+        '${REDIS_PASSWORD:?REDIS_PASSWORD is required}',
+        '--maxmemory',
+        '256mb',
+        '--maxmemory-policy',
+        'noeviction',
+      ]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep PONG',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks: [data]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512m
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${OBJECT_STORAGE_ACCESS_KEY:?OBJECT_STORAGE_ACCESS_KEY is required}
+      MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE_SECRET_KEY:?OBJECT_STORAGE_SECRET_KEY is required}
+    command: ['server', '/data', '--console-address', ':9001']
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks: [data]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512m
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${OBJECT_STORAGE_ACCESS_KEY:?OBJECT_STORAGE_ACCESS_KEY is required}
+      MINIO_ROOT_PASSWORD: ${OBJECT_STORAGE_SECRET_KEY:?OBJECT_STORAGE_SECRET_KEY is required}
+      OBJECT_STORAGE_BUCKET: ${OBJECT_STORAGE_BUCKET:?OBJECT_STORAGE_BUCKET is required}
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" &&
+      mc mb --ignore-existing local/$$OBJECT_STORAGE_BUCKET &&
+      mc anonymous set none local/$$OBJECT_STORAGE_BUCKET
+      "
+    networks: [data]
+    restart: 'no'
+
+  # Also used as the one-off runner for `pnpm staging:seed` and
+  # `pnpm staging:smoke` (via `docker compose run --rm migrate <command>`)
+  # — both need the full monorepo + devDependencies (tsx, Prisma CLI) that
+  # the pruned runtime `api` image intentionally doesn't have, and the
+  # smoke test additionally needs to reach api/admin-web/minio directly,
+  # hence both networks here.
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: build
+    env_file: .env.staging
+    command: ['pnpm', '--filter', '@resilient-taxi/api', 'db:migrate:deploy']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [data, edge]
+    restart: 'no'
+
+  # `image:` + `build:` together lets a local `docker compose up --build`
+  # keep working unchanged, while the CI staging-deploy workflow instead
+  # sets STAGING_API_IMAGE/STAGING_ADMIN_IMAGE to a commit-SHA-tagged image
+  # it already built and pushed once in a separate job, then runs
+  # `docker compose pull` + `up -d` (no --build) — one build, deployed
+  # verbatim, never a second host-side rebuild that could drift from what
+  # CI tested.
+  api:
+    image: ${STAGING_API_IMAGE:-resilient-taxi-staging-api:local}
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file: .env.staging
+    expose:
+      - '3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks: [data, edge]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1g
+
+  admin-web:
+    image: ${STAGING_ADMIN_IMAGE:-resilient-taxi-staging-admin-web:local}
+    build:
+      context: .
+      dockerfile: apps/admin-web/Dockerfile
+    environment:
+      API_URL: http://api:3000/api/v1
+      NODE_ENV: production
+    expose:
+      - '3000'
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks: [edge]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512m
+
+  caddy:
+    build:
+      context: ./infrastructure/caddy
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      STAGING_API_DOMAIN: ${STAGING_API_DOMAIN:?STAGING_API_DOMAIN is required}
+      STAGING_ADMIN_DOMAIN: ${STAGING_ADMIN_DOMAIN:?STAGING_ADMIN_DOMAIN is required}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      HTTP_BODY_LIMIT_BYTES: ${HTTP_BODY_LIMIT_BYTES:-262144}
+    volumes:
+      - ./infrastructure/caddy/Caddyfile.staging:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - admin-web
+    networks: [edge]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256m
+
+networks:
+  data:
+  edge:
+
+volumes:
+  postgres_data:
+    name: resilient-taxi-staging-postgres-data
+  redis_data:
+    name: resilient-taxi-staging-redis-data
+  minio_data:
+    name: resilient-taxi-staging-minio-data
+  caddy_data:
+    name: resilient-taxi-staging-caddy-data
+  caddy_config:
+    name: resilient-taxi-staging-caddy-config

@@ -1,0 +1,53 @@
+name: resilient-taxi-managed
+
+# Deployment against managed data services (Yandex Managed PostgreSQL + Redis).
+# No local postgres/redis: point DATABASE_URL and REDIS_URL in .env at the
+# managed endpoints (usually with TLS: sslmode=require / rediss://).
+#
+# Usage:
+#   cp .env.prod.example .env   # set DATABASE_URL/REDIS_URL to managed hosts
+#   docker compose -f docker-compose.managed.yml up -d --build
+
+services:
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: build
+    env_file: .env
+    command: ['pnpm', '--filter', '@resilient-taxi/api', 'db:migrate:deploy']
+    restart: 'no'
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file: .env
+    expose:
+      - '3000'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN is required}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./infrastructure/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+volumes:
+  caddy_data:
+    name: resilient-taxi-managed-caddy-data
+  caddy_config:
+    name: resilient-taxi-managed-caddy-config

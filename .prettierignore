@@ -3,3 +3,6 @@ node_modules/
 dist/
 coverage/
 pnpm-lock.yaml
+
+# Автогенерируемый Next.js файл (пересоздаётся при сборке)
+apps/admin-web/next-env.d.ts

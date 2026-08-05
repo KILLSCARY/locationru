@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (lint, types, tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @resilient-taxi/api prisma:generate
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+  android-domain:
+    name: Android pure-JVM modules
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/driver-android
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # The Android modules need the Android SDK and are not built here; the
+      # pure-JVM domain and core:maps modules carry the unit-tested business
+      # and map-rendering logic.
+      - name: Domain and maps tests and static analysis
+        run: ./gradlew :domain:test :domain:ktlintCheck :domain:detekt :core:maps:test :core:maps:ktlintCheck :core:maps:detekt --no-daemon
+
+  android-push:
+    name: Android push module (core:push)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/driver-android
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # Unlike domain/core:maps, core:push is a com.android.library module
+      # (NotificationManager, Context) and needs the Android SDK to compile
+      # at all — same trade-off android-apk.yml already makes for :app.
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: core:push tests and static analysis
+        run: ./gradlew :core:push:test :core:push:ktlintCheck :core:push:detekt --no-daemon

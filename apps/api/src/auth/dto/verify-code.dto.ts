@@ -1,6 +1,8 @@
 import {
   IsEnum,
+  IsOptional,
   IsString,
+  IsUUID,
   Matches,
   MaxLength,
   MinLength,
@@ -15,8 +17,11 @@ export enum AuthDevicePlatform {
 }
 
 export class VerifyCodeDto extends RequestCodeDto {
+  @IsUUID()
+  requestId!: string;
+
   @IsString()
-  @Matches(/^\d{6}$/)
+  @Matches(/^\d{4,10}$/)
   code!: string;
 
   @IsString()
@@ -26,4 +31,9 @@ export class VerifyCodeDto extends RequestCodeDto {
 
   @IsEnum(AuthDevicePlatform)
   platform!: AuthDevicePlatform;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  appVersion?: string;
 }
