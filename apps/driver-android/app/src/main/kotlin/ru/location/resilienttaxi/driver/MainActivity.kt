@@ -165,16 +165,16 @@ private fun TripCard(
     onSkip: (String) -> Unit,
 ) {
     var ownPrice by remember { mutableStateOf("") }
-    val commission = trip.passengerPriceKopecks * 15 / 100
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(16.dp)) {
             Text(
-                "Маршрут: ${trip.pickupAddress} → координаты назначения будут доступны после выбора",
+                "Маршрут: ${trip.pickupAddress} → ${trip.destinationAddress}",
                 style = MaterialTheme.typography.titleMedium,
             )
             Text("Цена пассажира: ${trip.passengerPriceKopecks} коп.")
-            Text("Оценочная комиссия (15%): $commission коп.; чистый доход: ${trip.passengerPriceKopecks - commission} коп.")
+            Text("Комиссия: ${trip.estimatedCommissionKopecks} коп.; чистый доход: ${trip.estimatedDriverPayoutKopecks} коп.")
             Text("До пассажира: ${trip.distanceToPickupMeters} м, ~${trip.estimatedPickupSeconds} сек")
+            Text("Поездка: ${trip.estimatedTripDistanceMeters} м, ~${trip.estimatedTripDurationSeconds / 60} мин")
             Divider()
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { onBid(trip, vehicleId, null) }) { Text("Принять цену") }

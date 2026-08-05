@@ -98,8 +98,13 @@ data class AvailableTripResponse(
     val tripId: String,
     val passengerPriceKopecks: Int,
     val pickupAddress: String,
+    val destinationAddress: String,
     val estimatedPickupSeconds: Int,
     val distanceToPickupMeters: Int,
+    val estimatedTripDistanceMeters: Int,
+    val estimatedTripDurationSeconds: Int,
+    val estimatedCommissionKopecks: Int,
+    val estimatedDriverPayoutKopecks: Int,
 )
 
 @Serializable

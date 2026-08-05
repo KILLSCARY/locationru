@@ -1,22 +1,33 @@
 import { api } from '@/api/client';
 import type { Trip } from '@/api/types';
+import {
+  CreateTripRequestSchema,
+  CreateTripResponseSchema,
+  GetTripResponseSchema,
+  type CreateTripRequest,
+} from '@resilient-taxi/contracts';
 
-export type CreateTripInput = {
-  pickup: { latitude: number; longitude: number };
-  destination: { latitude: number; longitude: number };
-  pickupAddress: string;
-  destinationAddress: string;
-  passengerPriceKopecks: number;
-};
+export type CreateTripInput = Omit<
+  CreateTripRequest,
+  'passengerPriceKopecks'
+> & { passengerPriceKopecks: number };
 
-export const createTrip = (input: CreateTripInput) =>
-  api<Pick<Trip, 'id' | 'status' | 'version'>>('/trips', {
-    method: 'POST',
-    headers: { 'Idempotency-Key': `${Date.now()}-${Math.random().toString(36).slice(2)}` },
-    body: JSON.stringify(input),
-  });
+export const createTrip = async (input: CreateTripInput) =>
+  CreateTripResponseSchema.parse(
+    await api<unknown>('/trips', {
+      method: 'POST',
+      headers: {
+        'Idempotency-Key': `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      },
+      body: JSON.stringify(CreateTripRequestSchema.parse(input)),
+    }),
+  );
 
 export const startSearch = (tripId: string) =>
-  api<Pick<Trip, 'id' | 'status' | 'version'>>(`/trips/${tripId}/start-search`, { method: 'POST' });
+  api<Pick<Trip, 'id' | 'status' | 'version'>>(
+    `/trips/${tripId}/start-search`,
+    { method: 'POST' },
+  );
 
-export const getTrip = (tripId: string) => api<Trip>(`/trips/${tripId}`);
+export const getTrip = async (tripId: string): Promise<Trip> =>
+  GetTripResponseSchema.parse(await api<unknown>(`/trips/${tripId}`));

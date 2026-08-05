@@ -138,8 +138,8 @@ describe('local development journey', () => {
       .set(bearer(driverTokens.accessToken))
       .send({
         recordedAt: new Date().toISOString(),
-        latitude: 55.7558,
-        longitude: 37.6173,
+        latitude: 60.052281,
+        longitude: 30.440428,
         accuracyMeters: 8,
         speedMetersPerSecond: 0,
         bearingDegrees: 0,
@@ -159,12 +159,20 @@ describe('local development journey', () => {
         .set(bearer(passengerTokens.accessToken))
         .set('Idempotency-Key', `journey-create-${runId}`)
         .send({
-          pickup: { latitude: 55.7558, longitude: 37.6173 },
-          destination: { latitude: 55.75, longitude: 37.65 },
-          pickupAddress: 'Development pickup',
-          destinationAddress: 'Development destination',
+          pickup: {
+            latitude: 60.052281,
+            longitude: 30.440428,
+            formattedAddress: 'Мурино, Екатерининская улица, 30',
+            providerPlaceId: 'dev:murino:ekaterininskaya-30',
+          },
+          destination: {
+            latitude: 59.934102,
+            longitude: 30.338448,
+            formattedAddress: 'Санкт-Петербург, Невский проспект, 45',
+            providerPlaceId: 'dev:spb:nevsky-45',
+          },
           passengerPriceKopecks: 130_000,
-          stops: [],
+          waypoints: [],
           options: { childSeat: false, pet: false, luggage: true },
           comment: 'Automated local development journey',
         })

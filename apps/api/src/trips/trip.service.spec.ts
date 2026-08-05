@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import type { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { TripStatus, TripStatusActorType } from '../generated/prisma/client.js';
+import { MapsService } from '../maps/maps.service.js';
 import type { CreateTripDto } from './dto/create-trip.dto.js';
 import { TripService } from './trip.service.js';
 import {
@@ -107,6 +108,28 @@ describe('TripService', () => {
       new ConfigService({ trips: { minPassengerPriceKopecks: 10_000 } }),
       prisma as unknown as PrismaService,
       stateMachine as unknown as TripStateMachine,
+      {
+        buildRoute: async (input: {
+          origin: { latitude: number; longitude: number };
+          destination: { latitude: number; longitude: number };
+        }) => ({
+          distanceMeters: 1_000,
+          durationSeconds: 120,
+          geometry: {
+            type: 'LineString' as const,
+            coordinates: [
+              [input.origin.longitude, input.origin.latitude],
+              [input.destination.longitude, input.destination.latitude],
+            ],
+          },
+          encodedPolyline: null,
+          bounds: { southWest: input.origin, northEast: input.destination },
+          snappedWaypoints: [input.origin, input.destination],
+          provider: 'development',
+          providerRouteId: 'test-route',
+          warnings: [],
+        }),
+      } as unknown as MapsService,
     );
   });
 
@@ -247,15 +270,26 @@ describe('TripService', () => {
 
 function validTripInput(): CreateTripDto {
   return {
-    pickup: { latitude: 55.7558, longitude: 37.6173 },
-    destination: { latitude: 55.7517, longitude: 37.6178 },
-    pickupAddress: 'Красная площадь, 1',
-    destinationAddress: 'Тверская улица, 1',
+    pickup: {
+      latitude: 55.7558,
+      longitude: 37.6173,
+      formattedAddress: 'Красная площадь, 1',
+      providerPlaceId: 'dev:pickup',
+    },
+    destination: {
+      latitude: 55.7517,
+      longitude: 37.6178,
+      formattedAddress: 'Тверская улица, 1',
+      providerPlaceId: 'dev:destination',
+    },
     passengerPriceKopecks: 10_000,
-    stops: [
+    waypoints: [
       {
-        location: { latitude: 55.753, longitude: 37.62 },
-        address: 'Манежная площадь, 1',
+        latitude: 55.753,
+        longitude: 37.62,
+        formattedAddress: 'Манежная площадь, 1',
+        providerPlaceId: null,
+        sequence: 1,
       },
     ],
     options: { childSeat: true, pet: false, luggage: true },

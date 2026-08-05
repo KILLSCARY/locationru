@@ -10,6 +10,7 @@ import { DriversModule } from './drivers/drivers.module.js';
 import { FinanceModule } from './finance/finance.module.js';
 import { HealthModule } from './health/health.module.js';
 import { LifecycleModule } from './lifecycle/lifecycle.module.js';
+import { MapsModule } from './maps/maps.module.js';
 import { PaymentsModule } from './payments/payments.module.js';
 import { RedisModule } from './redis/redis.module.js';
 import { RealtimeModule } from './realtime/realtime.module.js';
@@ -31,6 +32,7 @@ import { TripsModule } from './trips/trips.module.js';
     FinanceModule,
     LifecycleModule,
     PaymentsModule,
+    MapsModule,
   ],
 })
 export class AppModule {}

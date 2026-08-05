@@ -12,7 +12,12 @@ function SessionBootstrap({ children }: PropsWithChildren) {
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
-  if (!hydrated) return <View style={{ flex: 1, justifyContent: 'center' }}><ActivityIndicator /></View>;
+  if (!hydrated)
+    return (
+      <View style={{ flex: 1, justifyContent: 'center' }}>
+        <ActivityIndicator />
+      </View>
+    );
   return children;
 }
 

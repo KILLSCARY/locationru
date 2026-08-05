@@ -6,7 +6,17 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "plugins": ["expo-router", "expo-secure-store", "expo-dev-client"],
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-dev-client",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Resilient Taxi использует геопозицию, чтобы подставить адрес подачи."
+        }
+      ]
+    ],
     "experiments": { "typedRoutes": true },
     "android": { "package": "ru.location.resilienttaxi.passenger" },
     "ios": { "bundleIdentifier": "ru.location.resilienttaxi.passenger" }

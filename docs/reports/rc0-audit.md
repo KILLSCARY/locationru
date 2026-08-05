@@ -161,21 +161,21 @@ treated as successful.
 
 ## Commands actually executed
 
-| Check | Result |
-| --- | --- |
-| Clean checkout `pnpm install --frozen-lockfile` | Passed |
-| Prisma client generation | Passed |
-| API build | Passed |
-| Admin Next.js production build | Passed |
-| Passenger TypeScript check and web export | Passed |
-| Root lint | Passed |
-| Root typecheck | Passed |
-| Root tests after fixes | Passed (API: 15 suites/55 tests; one integration suite skipped) |
-| API e2e command | Passed (5 suites/8 tests; one integration suite skipped) |
-| Android `assembleDevDebug`, unit tests, detekt, ktlint | Passed |
-| Docker Compose startup / PostgreSQL / Redis health | Not run: Docker CLI unavailable |
-| Migration deploy/replay, seed, PostGIS SQL validation | Not run: Docker CLI unavailable |
-| Full DB/WebSocket/ledger scenario | Not run: no disposable infrastructure and no real test exists |
+| Check                                                  | Result                                                          |
+| ------------------------------------------------------ | --------------------------------------------------------------- |
+| Clean checkout `pnpm install --frozen-lockfile`        | Passed                                                          |
+| Prisma client generation                               | Passed                                                          |
+| API build                                              | Passed                                                          |
+| Admin Next.js production build                         | Passed                                                          |
+| Passenger TypeScript check and web export              | Passed                                                          |
+| Root lint                                              | Passed                                                          |
+| Root typecheck                                         | Passed                                                          |
+| Root tests after fixes                                 | Passed (API: 15 suites/55 tests; one integration suite skipped) |
+| API e2e command                                        | Passed (5 suites/8 tests; one integration suite skipped)        |
+| Android `assembleDevDebug`, unit tests, detekt, ktlint | Passed                                                          |
+| Docker Compose startup / PostgreSQL / Redis health     | Not run: Docker CLI unavailable                                 |
+| Migration deploy/replay, seed, PostGIS SQL validation  | Not run: Docker CLI unavailable                                 |
+| Full DB/WebSocket/ledger scenario                      | Not run: no disposable infrastructure and no real test exists   |
 
 ## Staging decision
 

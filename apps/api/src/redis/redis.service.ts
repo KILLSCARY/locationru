@@ -73,6 +73,16 @@ export class RedisService implements OnModuleDestroy {
     await this.client.del(key);
   }
 
+  async deleteIfValue(key: string, expectedValue: string): Promise<boolean> {
+    const deleted = await this.client.eval(
+      'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end',
+      1,
+      key,
+      expectedValue,
+    );
+    return deleted === 1;
+  }
+
   async onModuleDestroy(): Promise<void> {
     if (this.client.status === 'end' || this.client.status === 'wait') {
       this.client.disconnect();

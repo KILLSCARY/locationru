@@ -85,4 +85,43 @@ export const environmentValidationSchema = Joi.object({
     .integer()
     .min(100)
     .default(1_000),
+  MAPS_PROVIDER: Joi.string()
+    .valid('development', 'yandex')
+    .default('development'),
+  MAPS_API_KEY: Joi.string().min(1).allow('').optional(),
+  MAPS_API_URL: Joi.string()
+    .uri({ scheme: ['https'] })
+    .default('https://geocode-maps.yandex.ru/v1/'),
+  MAPS_ROUTING_API_URL: Joi.string()
+    .uri({ scheme: ['https'] })
+    .default('https://api.routing.yandex.net/v2/route'),
+  MAPS_TIMEOUT_MS: Joi.number().integer().min(100).max(30_000).default(5_000),
+  MAPS_RETRY_ATTEMPTS: Joi.number().integer().min(0).max(4).default(2),
+  MAPS_CIRCUIT_BREAKER_THRESHOLD: Joi.number().integer().min(1).default(5),
+  MAPS_CIRCUIT_BREAKER_RESET_MS: Joi.number()
+    .integer()
+    .min(1_000)
+    .default(30_000),
+  MAPS_RATE_LIMIT_PER_MINUTE: Joi.number().integer().min(1).default(60),
+  MAPS_SUGGESTIONS_TTL_SECONDS: Joi.number().integer().min(1).default(300),
+  MAPS_GEOCODING_TTL_SECONDS: Joi.number().integer().min(1).default(86_400),
+  MAPS_REVERSE_GEOCODING_TTL_SECONDS: Joi.number()
+    .integer()
+    .min(1)
+    .default(3_600),
+  MAPS_ROUTE_TTL_SECONDS: Joi.number().integer().min(1).default(1_800),
+  PRICING_BASE_FARE_KOPECKS: Joi.number().integer().min(0).default(15_000),
+  PRICING_PER_KILOMETER_KOPECKS: Joi.number().integer().min(0).default(3_000),
+  PRICING_PER_MINUTE_KOPECKS: Joi.number().integer().min(0).default(500),
+  PRICING_MINIMUM_FARE_KOPECKS: Joi.number().integer().min(1).default(20_000),
+  PRICING_LOWER_MULTIPLIER_BASIS_POINTS: Joi.number()
+    .integer()
+    .min(0)
+    .max(10_000)
+    .default(9_000),
+  PRICING_UPPER_MULTIPLIER_BASIS_POINTS: Joi.number()
+    .integer()
+    .min(10_000)
+    .max(50_000)
+    .default(12_000),
 });

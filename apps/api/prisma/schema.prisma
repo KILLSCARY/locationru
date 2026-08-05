@@ -289,8 +289,14 @@ model Trip {
   destinationLocation      Unsupported("geography(Point, 4326)")
   pickupAddress            String       @db.VarChar(512)
   destinationAddress       String       @db.VarChar(512)
+  pickupProviderPlaceId    String?      @db.VarChar(512)
+  destinationProviderPlaceId String?    @db.VarChar(512)
   estimatedDistanceMeters  Int
   estimatedDurationSeconds Int
+  route                    Unsupported("geography(LineString, 4326)")?
+  routeBounds              Json?
+  routeProvider            String?      @db.VarChar(64)
+  routeProviderRouteId     String?      @db.VarChar(512)
   startedAt                DateTime?    @db.Timestamptz(3)
   completedAt              DateTime?    @db.Timestamptz(3)
   cancelledAt              DateTime?    @db.Timestamptz(3)
@@ -541,6 +547,7 @@ model TripStop {
   sequence Int
   location Unsupported("geography(Point, 4326)")
   address  String                                @db.VarChar(512)
+  providerPlaceId String?                        @db.VarChar(512)
   trip     Trip                                  @relation(fields: [tripId], references: [id], onDelete: Cascade)
 
   @@unique([tripId, sequence], map: "trip_stops_trip_sequence_key")
