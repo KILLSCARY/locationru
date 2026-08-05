@@ -1,0 +1,53 @@
+{
+	admin off
+}
+
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+}
+
+http://backend.localhost {
+	redir https://backend.localhost:{$STAGING_HTTPS_PORT}{uri} permanent
+}
+
+https://backend.localhost {
+	tls internal
+	import security_headers
+	reverse_proxy api:3000
+}
+
+http://admin.localhost {
+	redir https://admin.localhost:{$STAGING_HTTPS_PORT}{uri} permanent
+}
+
+https://admin.localhost {
+	tls internal
+	import security_headers
+	reverse_proxy admin:3000
+}
+
+http://storage.localhost {
+	redir https://storage.localhost:{$STAGING_HTTPS_PORT}{uri} permanent
+}
+
+https://storage.localhost {
+	tls internal
+	import security_headers
+	reverse_proxy minio:9001
+}
+
+http://s3.localhost {
+	redir https://s3.localhost:{$STAGING_HTTPS_PORT}{uri} permanent
+}
+
+https://s3.localhost {
+	tls internal
+	import security_headers
+	reverse_proxy minio:9000
+}

@@ -4,11 +4,14 @@ import test from 'node:test';
 import {
   CONTRACT_PACKAGE_VERSION,
   CONTRACT_VERSION,
+  AddressSuggestionSchema,
   CoordinateSchema,
   CreateTripRequestSchema,
   DriverBidSchema,
   DriverLocationUpdateSchema,
   RealtimeEventSchemas,
+  RouteRequestSchema,
+  RouteResultSchema,
   TripStatusSchema,
 } from '../dist/index.js';
 
@@ -36,10 +39,18 @@ test('validates coordinates and rejects values outside the world bounds', () => 
 
 test('validates passenger trip requests and integer kopecks', () => {
   const request = {
-    pickup: { latitude: 55.75, longitude: 37.62 },
-    destination: { latitude: 55.76, longitude: 37.63 },
-    pickupAddress: 'Pickup',
-    destinationAddress: 'Destination',
+    pickup: {
+      latitude: 55.75,
+      longitude: 37.62,
+      formattedAddress: 'Pickup',
+      providerPlaceId: null,
+    },
+    destination: {
+      latitude: 55.76,
+      longitude: 37.63,
+      formattedAddress: 'Destination',
+      providerPlaceId: null,
+    },
     passengerPriceKopecks: 12_500,
   };
   assert.equal(CreateTripRequestSchema.safeParse(request).success, true);
@@ -49,6 +60,52 @@ test('validates passenger trip requests and integer kopecks', () => {
       passengerPriceKopecks: 12.5,
     }).success,
     false,
+  );
+});
+
+test('validates provider-neutral address and route contracts', () => {
+  assert.equal(
+    AddressSuggestionSchema.safeParse({
+      id: 'dev:nevsky',
+      title: 'Невский проспект, 45',
+      subtitle: null,
+      fullAddress: 'Санкт-Петербург, Невский проспект, 45',
+      location: { latitude: 59.934102, longitude: 30.338448 },
+      provider: 'development',
+      providerPlaceId: 'dev:spb:nevsky-45',
+    }).success,
+    true,
+  );
+  const request = RouteRequestSchema.parse({
+    origin: { latitude: 60.052281, longitude: 30.440428 },
+    destination: { latitude: 59.934102, longitude: 30.338448 },
+  });
+  assert.deepEqual(request.waypoints, []);
+  assert.equal(request.transportMode, 'CAR');
+  assert.equal(request.avoidTolls, false);
+  assert.equal(request.avoidUnpavedRoads, false);
+  assert.equal(
+    RouteResultSchema.safeParse({
+      distanceMeters: 15_000,
+      durationSeconds: 1_800,
+      geometry: {
+        type: 'LineString',
+        coordinates: [
+          [30.440428, 60.052281],
+          [30.338448, 59.934102],
+        ],
+      },
+      encodedPolyline: null,
+      bounds: {
+        southWest: { latitude: 59.934102, longitude: 30.338448 },
+        northEast: { latitude: 60.052281, longitude: 30.440428 },
+      },
+      snappedWaypoints: [request.origin, request.destination],
+      provider: 'development',
+      providerRouteId: 'dev:route',
+      warnings: [],
+    }).success,
+    true,
   );
 });
 

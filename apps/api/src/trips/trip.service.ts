@@ -12,6 +12,7 @@ import { ConfigService } from '@nestjs/config';
 import type { AuthenticatedUser } from '../auth/auth.types.js';
 import { PrismaService } from '../database/prisma.service.js';
 import { TripStatus, TripStatusActorType } from '../generated/prisma/client.js';
+import { MapsService } from '../maps/maps.service.js';
 import {
   TripStateMachine,
   type TripTransitionResult,
@@ -36,6 +37,7 @@ interface TripDetailsRow extends TripSummaryRow {
   completedAt: Date | null;
   createdAt: Date;
   destinationAddress: string;
+  destinationProviderPlaceId: string | null;
   destinationLatitude: number;
   destinationLongitude: number;
   estimatedDistanceMeters: number;
@@ -45,6 +47,7 @@ interface TripDetailsRow extends TripSummaryRow {
   passengerPriceKopecks: number;
   pet: boolean;
   pickupAddress: string;
+  pickupProviderPlaceId: string | null;
   pickupLatitude: number;
   pickupLongitude: number;
   selectedDriverId: string | null;
@@ -58,6 +61,7 @@ interface TripStopRow {
   latitude: number;
   longitude: number;
   sequence: number;
+  providerPlaceId: string | null;
 }
 
 export interface PassengerTripDetails extends TripSummaryRow {
@@ -66,9 +70,10 @@ export interface PassengerTripDetails extends TripSummaryRow {
   completedAt: Date | null;
   createdAt: Date;
   destination: {
-    address: string;
+    formattedAddress: string;
     latitude: number;
     longitude: number;
+    providerPlaceId: string | null;
   };
   estimatedDistanceMeters: number;
   estimatedDurationSeconds: number;
@@ -80,14 +85,21 @@ export interface PassengerTripDetails extends TripSummaryRow {
   };
   passengerPriceKopecks: number;
   pickup: {
-    address: string;
+    formattedAddress: string;
     latitude: number;
     longitude: number;
+    providerPlaceId: string | null;
   };
   selectedDriverId: string | null;
   selectedVehicleId: string | null;
   startedAt: Date | null;
-  stops: TripStopRow[];
+  waypoints: Array<{
+    formattedAddress: string;
+    latitude: number;
+    longitude: number;
+    providerPlaceId: string | null;
+    sequence: number;
+  }>;
   updatedAt: Date;
 }
 
@@ -97,6 +109,7 @@ export class TripService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly stateMachine: TripStateMachine,
+    private readonly maps: MapsService,
   ) {}
 
   async create(
@@ -107,7 +120,27 @@ export class TripService {
     this.assertPassenger(passenger);
     const key = this.normalizeIdempotencyKey(idempotencyKey);
     this.assertMinimumPrice(input.passengerPriceKopecks);
+    const stops = [...(input.waypoints ?? [])].sort(
+      (left, right) => left.sequence - right.sequence,
+    );
+    if (new Set(stops.map((stop) => stop.sequence)).size !== stops.length) {
+      throw new BadRequestException({
+        code: 'DUPLICATE_STOP_SEQUENCE',
+        message: 'Waypoint sequence values must be unique',
+      });
+    }
     const requestHash = this.hashRequest(input);
+    const route = await this.maps.buildRoute({
+      origin: input.pickup,
+      destination: input.destination,
+      waypoints: stops,
+      transportMode: 'CAR',
+      avoidTolls: false,
+      avoidUnpavedRoads: false,
+    });
+    const routeWkt = `SRID=4326;LINESTRING(${route.geometry.coordinates
+      .map(([longitude, latitude]) => `${longitude} ${latitude}`)
+      .join(',')})`;
 
     try {
       return await this.prisma.$transaction(async (transaction) => {
@@ -163,13 +196,16 @@ export class TripService {
           `INSERT INTO "trips" (
               "id", "passengerId", "status", "passengerPriceKopecks",
               "pickupLocation", "destinationLocation", "pickupAddress", "destinationAddress",
-              "estimatedDistanceMeters", "estimatedDurationSeconds", "childSeat", "pet", "luggage", "comment",
+              "pickupProviderPlaceId", "destinationProviderPlaceId",
+              "estimatedDistanceMeters", "estimatedDurationSeconds", "route", "routeBounds",
+              "routeProvider", "routeProviderRouteId", "childSeat", "pet", "luggage", "comment",
               "createdAt", "updatedAt"
            ) VALUES (
               $1, $2, 'DRAFT', $3,
               ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography,
               ST_SetSRID(ST_MakePoint($6, $7), 4326)::geography,
-              $8, $9, 0, 0, $10, $11, $12, $13, NOW(), NOW()
+              $8, $9, $10, $11, $12, $13, ST_GeogFromText($14), $15::jsonb,
+              $16, $17, $18, $19, $20, $21, NOW(), NOW()
            )
            RETURNING "id", "status", "version"`,
           tripId,
@@ -179,27 +215,36 @@ export class TripService {
           input.pickup.latitude,
           input.destination.longitude,
           input.destination.latitude,
-          input.pickupAddress,
-          input.destinationAddress,
+          input.pickup.formattedAddress,
+          input.destination.formattedAddress,
+          input.pickup.providerPlaceId ?? null,
+          input.destination.providerPlaceId ?? null,
+          route.distanceMeters,
+          route.durationSeconds,
+          routeWkt,
+          JSON.stringify(route.bounds),
+          route.provider,
+          route.providerRouteId,
           options.childSeat ?? false,
           options.pet ?? false,
           options.luggage ?? false,
           input.comment ?? null,
         );
 
-        for (const [index, stop] of (input.stops ?? []).entries()) {
+        for (const stop of stops) {
           await transaction.$queryRawUnsafe(
             `INSERT INTO "trip_stops" (
-                "id", "tripId", "sequence", "location", "address"
+                "id", "tripId", "sequence", "location", "address", "providerPlaceId"
              ) VALUES (
-                $1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography, $6
+                $1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography, $6, $7
              )`,
             randomUUID(),
             tripId,
-            index + 1,
-            stop.location.longitude,
-            stop.location.latitude,
-            stop.address,
+            stop.sequence,
+            stop.longitude,
+            stop.latitude,
+            stop.formattedAddress,
+            stop.providerPlaceId ?? null,
           );
         }
 
@@ -238,6 +283,7 @@ export class TripService {
       `SELECT
           "id", "status", "version", "passengerPriceKopecks", "finalPriceKopecks",
           "selectedDriverId", "selectedVehicleId", "pickupAddress", "destinationAddress",
+          "pickupProviderPlaceId", "destinationProviderPlaceId",
           ST_Y("pickupLocation"::geometry) AS "pickupLatitude",
           ST_X("pickupLocation"::geometry) AS "pickupLongitude",
           ST_Y("destinationLocation"::geometry) AS "destinationLatitude",
@@ -260,7 +306,7 @@ export class TripService {
 
     const stops = await this.prisma.$queryRawUnsafe<TripStopRow[]>(
       `SELECT
-          "sequence", "address",
+          "sequence", "address", "providerPlaceId",
           ST_Y("location"::geometry) AS "latitude",
           ST_X("location"::geometry) AS "longitude"
        FROM "trip_stops"
@@ -278,14 +324,16 @@ export class TripService {
       selectedDriverId: trip.selectedDriverId,
       selectedVehicleId: trip.selectedVehicleId,
       pickup: {
-        address: trip.pickupAddress,
+        formattedAddress: trip.pickupAddress,
         latitude: Number(trip.pickupLatitude),
         longitude: Number(trip.pickupLongitude),
+        providerPlaceId: trip.pickupProviderPlaceId,
       },
       destination: {
-        address: trip.destinationAddress,
+        formattedAddress: trip.destinationAddress,
         latitude: Number(trip.destinationLatitude),
         longitude: Number(trip.destinationLongitude),
+        providerPlaceId: trip.destinationProviderPlaceId,
       },
       estimatedDistanceMeters: trip.estimatedDistanceMeters,
       estimatedDurationSeconds: trip.estimatedDurationSeconds,
@@ -300,8 +348,10 @@ export class TripService {
         luggage: trip.luggage,
       },
       comment: trip.comment,
-      stops: stops.map((stop) => ({
-        ...stop,
+      waypoints: stops.map((stop) => ({
+        sequence: stop.sequence,
+        formattedAddress: stop.address,
+        providerPlaceId: stop.providerPlaceId,
         latitude: Number(stop.latitude),
         longitude: Number(stop.longitude),
       })),
@@ -435,10 +485,8 @@ export class TripService {
         JSON.stringify({
           pickup: input.pickup,
           destination: input.destination,
-          pickupAddress: input.pickupAddress,
-          destinationAddress: input.destinationAddress,
           passengerPriceKopecks: input.passengerPriceKopecks,
-          stops: input.stops ?? [],
+          waypoints: input.waypoints ?? [],
           options: input.options ?? {},
           comment: input.comment ?? null,
         }),

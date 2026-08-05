@@ -28,9 +28,19 @@ describe('Passenger trip endpoints', () => {
       id: 'trip-1',
       status: 'DRAFT',
       version: 0,
-      pickup: { latitude: 55.7558, longitude: 37.6173, address: 'A' },
-      destination: { latitude: 55.7517, longitude: 37.6178, address: 'B' },
-      stops: [],
+      pickup: {
+        latitude: 55.7558,
+        longitude: 37.6173,
+        formattedAddress: 'A',
+        providerPlaceId: null,
+      },
+      destination: {
+        latitude: 55.7517,
+        longitude: 37.6178,
+        formattedAddress: 'B',
+        providerPlaceId: null,
+      },
+      waypoints: [],
     }),
     startSearch: async () => ({
       id: 'trip-1',
@@ -112,7 +122,7 @@ describe('Passenger trip endpoints', () => {
       .set('Idempotency-Key', 'trip-create-2')
       .send({
         ...validCreateBody(),
-        pickup: { latitude: 91, longitude: 37.6173 },
+        pickup: { ...validCreateBody().pickup, latitude: 91 },
       })
       .expect(400);
   });
@@ -120,12 +130,20 @@ describe('Passenger trip endpoints', () => {
 
 function validCreateBody() {
   return {
-    pickup: { latitude: 55.7558, longitude: 37.6173 },
-    destination: { latitude: 55.7517, longitude: 37.6178 },
-    pickupAddress: 'Красная площадь, 1',
-    destinationAddress: 'Тверская улица, 1',
+    pickup: {
+      latitude: 55.7558,
+      longitude: 37.6173,
+      formattedAddress: 'Красная площадь, 1',
+      providerPlaceId: 'dev:pickup',
+    },
+    destination: {
+      latitude: 55.7517,
+      longitude: 37.6178,
+      formattedAddress: 'Тверская улица, 1',
+      providerPlaceId: 'dev:destination',
+    },
     passengerPriceKopecks: 10_000,
-    stops: [],
+    waypoints: [],
     options: { childSeat: false, pet: false, luggage: true },
   };
 }

@@ -57,7 +57,7 @@ export class AuthService {
     const phone = this.phoneNormalizer.normalize(inputPhone);
     await this.enforceRequestRateLimit(phone);
 
-    const code = randomInt(100_000, 1_000_000).toString();
+    const code = this.generateOtpCode();
     const record: OtpRecord = {
       attempts: 0,
       hash: this.hashOtp(phone, code),
@@ -398,6 +398,19 @@ export class AuthService {
     )
       .update(`${phone}:${code}`)
       .digest('hex');
+  }
+
+  private generateOtpCode(): string {
+    const developmentCode = this.configService.get<string>(
+      'auth.developmentOtpCode',
+    );
+    const environment = this.configService.get<string>('app.environment');
+
+    if (environment === 'development' && developmentCode) {
+      return developmentCode;
+    }
+
+    return randomInt(100_000, 1_000_000).toString();
   }
 
   private compareOtpHashes(expected: string, actual: string): boolean {

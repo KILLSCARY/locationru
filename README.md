@@ -1,5 +1,12 @@
 # Resilient Taxi
 
+## Yandex Cloud staging
+
+Стартовое облачное окружение запускает API, admin-web, PostGIS, Redis и HTTPS
+на одной VM. Резервные копии отправляются в приватный Object Storage без
+постоянных ключей. Состав, ограничения, стоимость и команды обслуживания
+описаны в [инструкции по Yandex Cloud staging](docs/yandex-staging.md).
+
 Монорепозиторий сервисов и клиентских приложений платформы Resilient Taxi.
 Проект использует pnpm workspaces и Turborepo. На этом этапе добавлен только
 базовый технический каркас без бизнес-логики, Firebase и платёжных SDK.
@@ -35,6 +42,65 @@ Copy-Item .env.example .env
 - `pnpm infra:up` — запустить PostgreSQL/PostGIS и Redis
 - `pnpm infra:down` — остановить инфраструктуру
 - `pnpm infra:logs` — показать логи инфраструктуры в реальном времени
+- `pnpm dev:stack` — запустить полный локальный integration stack
+- `pnpm dev:seed` — применить migrations и создать development fixtures
+- `pnpm dev:reset` — пересоздать локальные PostgreSQL/Redis volumes и fixtures
+- `pnpm test:journey` — провести тестовую поездку до `SETTLED` без мобильного UI
+
+Подробная инструкция: [локальная интеграционная среда](docs/local-development.md).
+
+## Безопасный self-hosted staging
+
+Локальный staging без облачных расходов запускается отдельными командами:
+
+- `pnpm staging:init` — создать `.env.staging` со случайными локальными секретами
+- `pnpm staging:up` — собрать и запустить API, admin-web, PostGIS, Redis, MinIO и HTTPS
+- `pnpm staging:status` — показать состояние контейнеров
+- `pnpm staging:backup` — немедленно создать проверенную копию PostgreSQL
+- `pnpm staging:backups` — показать сохранённые backup-объекты
+- `pnpm staging:logs` — показать логи
+- `pnpm staging:down` — остановить окружение с сохранением данных
+
+Подробная инструкция: [безопасный self-hosted staging](docs/self-hosted-staging.md).
+
+## CI
+
+Workflow [CI](.github/workflows/ci.yml) запускается для каждого pull request и
+push в `main` (а также в текущую ветку по умолчанию `master` до её переименования).
+Он не использует локальный `.env`: временные переменные, PostgreSQL/PostGIS и Redis
+создаются внутри GitHub Actions job.
+
+Перед отправкой pull request можно выполнить эквивалентные проверки локально:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm infra:up
+pnpm --filter @resilient-taxi/api db:validate
+pnpm --filter @resilient-taxi/api prisma:generate
+pnpm --filter @resilient-taxi/api db:migrate:deploy
+RUN_POSTGIS_INTEGRATION=true pnpm --filter @resilient-taxi/api test:integration
+pnpm --filter @resilient-taxi/api test:e2e
+pnpm --filter @resilient-taxi/api build
+pnpm --filter @resilient-taxi/admin-web build
+pnpm --filter @resilient-taxi/passenger-mobile typecheck
+```
+
+В PowerShell переменная для PostGIS integration-теста задаётся так:
+
+```powershell
+$env:RUN_POSTGIS_INTEGRATION = 'true'
+pnpm --filter @resilient-taxi/api test:integration
+```
+
+Android-проверки выполняются из каталога приложения:
+
+```bash
+cd apps/driver-android
+./gradlew unitTest detekt ktlintCheck :app:assembleDevDebug
+```
 
 ### API
 
@@ -118,3 +184,20 @@ docker compose exec postgres psql -U resilient_taxi -d resilient_taxi \
 - `packages/config` — общая конфигурация
 - `infrastructure` — конфигурация Docker, PostgreSQL и Redis
 - `docs` — архитектурная и предметная документация
+
+## Адреса, маршруты и рекомендованная цена
+
+В локальной разработке используется детерминированный офлайн-провайдер карт:
+ключ и интернет не нужны. Он знает четыре тестовых адреса в Санкт-Петербурге и
+Мурино. Для реального окружения подготовлен адаптер Яндекс; включение выполняется
+через `MAPS_PROVIDER=yandex` и секрет `MAPS_API_KEY`.
+
+Авторизованному клиенту доступны `/api/v1/maps/address-suggestions`,
+`/api/v1/maps/geocode`, `/api/v1/maps/reverse-geocode`,
+`/api/v1/routes/estimate`, `/api/v1/routes/build` и
+`/api/v1/pricing/estimate`. Настройки кэша, таймаута, лимита запросов и цены
+перечислены в `.env.example`.
+
+Подробности: [архитектура провайдеров](docs/maps/provider-architecture.md),
+[геокодинг](docs/maps/geocoding.md), [маршрутизация](docs/maps/routing.md) и
+[рекомендованная цена](docs/pricing/recommended-price.md).

@@ -41,6 +41,11 @@ interface PickupMetrics {
 }
 
 export interface AvailableDriverTrip extends PickupMetrics {
+  destinationAddress: string;
+  estimatedCommissionKopecks: number;
+  estimatedDriverPayoutKopecks: number;
+  estimatedTripDistanceMeters: number;
+  estimatedTripDurationSeconds: number;
   passengerPriceKopecks: number;
   pickupAddress: string;
   tripId: string;
@@ -97,11 +102,22 @@ export class BidsService {
       this.expireActiveBids(transaction, undefined, driver.id),
     );
 
-    return this.prisma.$queryRawUnsafe<AvailableDriverTrip[]>(
+    const trips = await this.prisma.$queryRawUnsafe<
+      Array<
+        Omit<
+          AvailableDriverTrip,
+          'estimatedCommissionKopecks' | 'estimatedDriverPayoutKopecks'
+        > & { cityCode: string | null }
+      >
+    >(
       `SELECT DISTINCT ON ("dispatch_attempts"."tripId")
           "dispatch_attempts"."tripId" AS "tripId",
           "trips"."passengerPriceKopecks",
           "trips"."pickupAddress",
+          "trips"."destinationAddress",
+          "trips"."estimatedDistanceMeters" AS "estimatedTripDistanceMeters",
+          "trips"."estimatedDurationSeconds" AS "estimatedTripDurationSeconds",
+          "trips"."cityCode",
           "dispatch_attempt_logs"."estimatedPickupSeconds",
           "dispatch_attempt_logs"."distanceMeters" AS "distanceToPickupMeters"
        FROM "dispatch_attempt_logs"
@@ -122,6 +138,20 @@ export class BidsService {
          )
        ORDER BY "dispatch_attempts"."tripId", "dispatch_attempt_logs"."createdAt" DESC`,
       driver.id,
+    );
+    return Promise.all(
+      trips.map(async ({ cityCode, ...trip }) => {
+        const fare = await this.fareCalculator.calculateForDriver({
+          driverId: driver.id,
+          cityCode,
+          totalKopecks: trip.passengerPriceKopecks,
+        });
+        return {
+          ...trip,
+          estimatedCommissionKopecks: fare.commissionKopecks,
+          estimatedDriverPayoutKopecks: fare.driverPayoutKopecks,
+        };
+      }),
     );
   }
 

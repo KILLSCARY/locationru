@@ -10,26 +10,18 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
-import { CoordinatesDto } from './coordinates.dto.js';
+import { TripAddressDto } from './trip-address.dto.js';
 import { TripOptionsDto } from './trip-options.dto.js';
 import { TripStopDto } from './trip-stop.dto.js';
 
 export class CreateTripDto {
   @ValidateNested()
-  @Type(() => CoordinatesDto)
-  pickup!: CoordinatesDto;
+  @Type(() => TripAddressDto)
+  pickup!: TripAddressDto;
 
   @ValidateNested()
-  @Type(() => CoordinatesDto)
-  destination!: CoordinatesDto;
-
-  @IsString()
-  @MaxLength(512)
-  pickupAddress!: string;
-
-  @IsString()
-  @MaxLength(512)
-  destinationAddress!: string;
+  @Type(() => TripAddressDto)
+  destination!: TripAddressDto;
 
   @Type(() => Number)
   @IsInt()
@@ -41,7 +33,7 @@ export class CreateTripDto {
   @ArrayMaxSize(10)
   @ValidateNested({ each: true })
   @Type(() => TripStopDto)
-  stops?: TripStopDto[];
+  waypoints?: TripStopDto[];
 
   @IsOptional()
   @ValidateNested()

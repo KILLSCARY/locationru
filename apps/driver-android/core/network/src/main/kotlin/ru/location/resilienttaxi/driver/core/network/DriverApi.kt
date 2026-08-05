@@ -1,5 +1,6 @@
 package ru.location.resilienttaxi.driver.core.network
 
+import kotlinx.serialization.Serializable
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
@@ -55,10 +56,12 @@ interface DriverApi {
     ): DriverBidResponse
 }
 
+@Serializable
 data class RequestCodeRequest(
     val phone: String,
 )
 
+@Serializable
 data class VerifyCodeRequest(
     val phone: String,
     val code: String,
@@ -66,39 +69,51 @@ data class VerifyCodeRequest(
     val platform: String = "ANDROID",
 )
 
+@Serializable
 data class RefreshTokenRequest(
     val refreshToken: String,
 )
 
+@Serializable
 data class TokenPairResponse(
     val accessToken: String,
     val refreshToken: String,
 )
 
+@Serializable
 data class CurrentDriverResponse(
     val id: String,
     val phone: String,
     val role: String,
 )
 
+@Serializable
 data class DriverStatusResponse(
     val status: String,
     val verificationStatus: String,
 )
 
+@Serializable
 data class AvailableTripResponse(
     val tripId: String,
     val passengerPriceKopecks: Int,
     val pickupAddress: String,
+    val destinationAddress: String,
     val estimatedPickupSeconds: Int,
     val distanceToPickupMeters: Int,
+    val estimatedTripDistanceMeters: Int,
+    val estimatedTripDurationSeconds: Int,
+    val estimatedCommissionKopecks: Int,
+    val estimatedDriverPayoutKopecks: Int,
 )
 
+@Serializable
 data class CreateBidRequest(
     val vehicleId: String,
     val offeredPriceKopecks: Int? = null,
 )
 
+@Serializable
 data class DriverBidResponse(
     val id: String,
     val tripId: String,
@@ -111,12 +126,14 @@ data class DriverBidResponse(
     val version: Int,
 )
 
+@Serializable
 data class DriverLocationBatchRequest(
     val locations: List<DriverLocationUploadRequest>,
 )
 
+@Serializable
 data class DriverLocationUploadRequest(
-    val recordedAtEpochMillis: Long,
+    val recordedAt: String,
     val latitude: Double,
     val longitude: Double,
     val accuracyMeters: Float,
@@ -124,7 +141,7 @@ data class DriverLocationUploadRequest(
     val bearingDegrees: Float?,
     val altitudeMeters: Double?,
     val provider: String,
-    val quality: String,
+    val confidence: String,
     val suspectedSpoofing: Boolean,
     val satellitesVisible: Int?,
     val cellCount: Int?,

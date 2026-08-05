@@ -37,7 +37,8 @@ export const useSessionStore = create<SessionState>((set) => ({
     set({ accessToken, refreshToken });
   },
   setActiveTripId: async (activeTripId) => {
-    if (activeTripId) await SecureStore.setItemAsync(ACTIVE_TRIP_ID, activeTripId);
+    if (activeTripId)
+      await SecureStore.setItemAsync(ACTIVE_TRIP_ID, activeTripId);
     else await SecureStore.deleteItemAsync(ACTIVE_TRIP_ID);
     set({ activeTripId });
   },

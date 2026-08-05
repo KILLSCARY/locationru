@@ -1,0 +1,23 @@
+{
+	admin off
+}
+
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+}
+
+api.{$YANDEX_BASE_DOMAIN} {
+	import security_headers
+	reverse_proxy api:3000
+}
+
+admin.{$YANDEX_BASE_DOMAIN} {
+	import security_headers
+	reverse_proxy admin:3000
+}

@@ -81,6 +81,123 @@ export const CoordinateSchema = z.object({
 });
 export type Coordinate = z.infer<typeof CoordinateSchema>;
 
+/** Provider-neutral geographic contracts. Coordinate order is always lat/lon
+ * on the wire; GeoJSON geometry below follows the standard lon/lat order. */
+export const GeoPointSchema = CoordinateSchema;
+export type GeoPoint = z.infer<typeof GeoPointSchema>;
+
+export const AddressComponentsSchema = z.object({
+  country: z.string().nullable().optional(),
+  region: z.string().nullable().optional(),
+  city: z.string().nullable().optional(),
+  district: z.string().nullable().optional(),
+  street: z.string().nullable().optional(),
+  house: z.string().nullable().optional(),
+  postalCode: z.string().nullable().optional(),
+});
+export type AddressComponents = z.infer<typeof AddressComponentsSchema>;
+
+export const AddressSuggestionSchema = z.object({
+  id: z.string().min(1).max(512),
+  title: z.string().min(1).max(512),
+  subtitle: z.string().max(512).nullable(),
+  fullAddress: z.string().min(1).max(512),
+  location: GeoPointSchema.nullable(),
+  provider: z.string().min(1).max(64),
+  providerPlaceId: z.string().max(512).nullable(),
+});
+export type AddressSuggestion = z.infer<typeof AddressSuggestionSchema>;
+
+export const ResolvedAddressSchema = z.object({
+  formattedAddress: z.string().min(1).max(512),
+  location: GeoPointSchema,
+  providerPlaceId: z.string().max(512).nullable(),
+  provider: z.string().min(1).max(64),
+  components: AddressComponentsSchema,
+});
+export type ResolvedAddress = z.infer<typeof ResolvedAddressSchema>;
+
+export const RouteTransportModeSchema = z.enum(['CAR']);
+export type RouteTransportMode = z.infer<typeof RouteTransportModeSchema>;
+
+export const RouteRequestSchema = z.object({
+  origin: GeoPointSchema,
+  destination: GeoPointSchema,
+  waypoints: z.array(GeoPointSchema).max(10).default([]),
+  transportMode: RouteTransportModeSchema.default('CAR'),
+  avoidTolls: z.boolean().default(false),
+  avoidUnpavedRoads: z.boolean().default(false),
+});
+export type RouteRequest = z.infer<typeof RouteRequestSchema>;
+
+export const RouteLineStringSchema = z.object({
+  type: z.literal('LineString'),
+  coordinates: z
+    .array(
+      z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)]),
+    )
+    .min(2),
+});
+export type RouteLineString = z.infer<typeof RouteLineStringSchema>;
+
+export const RouteBoundsSchema = z.object({
+  southWest: GeoPointSchema,
+  northEast: GeoPointSchema,
+});
+export type RouteBounds = z.infer<typeof RouteBoundsSchema>;
+
+export const RouteResultSchema = z.object({
+  distanceMeters: z.number().int().nonnegative(),
+  durationSeconds: z.number().int().nonnegative(),
+  geometry: RouteLineStringSchema,
+  encodedPolyline: z.string().nullable(),
+  bounds: RouteBoundsSchema,
+  snappedWaypoints: z.array(GeoPointSchema),
+  provider: z.string().min(1).max(64),
+  providerRouteId: z.string().max(512).nullable(),
+  warnings: z.array(z.string().max(512)),
+});
+export type RouteResult = z.infer<typeof RouteResultSchema>;
+
+export const AddressSuggestionsRequestSchema = z.object({
+  query: z.string().trim().min(3).max(256),
+  latitude: z.coerce.number().min(-90).max(90).optional(),
+  longitude: z.coerce.number().min(-180).max(180).optional(),
+  limit: z.coerce.number().int().min(1).max(10).default(5),
+});
+export type AddressSuggestionsRequest = z.infer<
+  typeof AddressSuggestionsRequestSchema
+>;
+export const AddressSuggestionsResponseSchema = z.object({
+  suggestions: z.array(AddressSuggestionSchema).max(10),
+});
+export type AddressSuggestionsResponse = z.infer<
+  typeof AddressSuggestionsResponseSchema
+>;
+
+export const GeocodeAddressRequestSchema = z.object({
+  address: z.string().trim().min(3).max(512),
+  providerPlaceId: z.string().max(512).nullable().optional(),
+});
+export type GeocodeAddressRequest = z.infer<typeof GeocodeAddressRequestSchema>;
+export const ReverseGeocodeRequestSchema = GeoPointSchema;
+export type ReverseGeocodeRequest = z.infer<typeof ReverseGeocodeRequestSchema>;
+export const ResolvedAddressResponseSchema = z.object({
+  address: ResolvedAddressSchema,
+});
+export type ResolvedAddressResponse = z.infer<
+  typeof ResolvedAddressResponseSchema
+>;
+
+export const PricingEstimateSchema = z.object({
+  recommendedPriceKopecks: KopecksSchema,
+  minimumSuggestedPriceKopecks: KopecksSchema,
+  maximumSuggestedPriceKopecks: KopecksSchema,
+  distanceMeters: z.number().int().nonnegative(),
+  durationSeconds: z.number().int().nonnegative(),
+});
+export type PricingEstimate = z.infer<typeof PricingEstimateSchema>;
+
 export const DriverBidSchema = z.object({
   id: z.string().uuid(),
   tripId: z.string().uuid(),
@@ -97,6 +214,12 @@ export const DriverBidSchema = z.object({
 });
 export type DriverBid = z.infer<typeof DriverBidSchema>;
 
+export const TripAddressPointSchema = GeoPointSchema.extend({
+  formattedAddress: z.string().min(1).max(512),
+  providerPlaceId: z.string().max(512).nullable(),
+});
+export type TripAddressPoint = z.infer<typeof TripAddressPointSchema>;
+
 export const TripSummarySchema = z.object({
   id: z.string().uuid(),
   passengerId: z.string().uuid(),
@@ -108,10 +231,8 @@ export const TripSummarySchema = z.object({
   commissionBasisPoints: BasisPointsSchema.nullable(),
   commissionKopecks: KopecksSchema.nullable(),
   driverPayoutKopecks: KopecksSchema.nullable(),
-  pickup: CoordinateSchema,
-  destination: CoordinateSchema,
-  pickupAddress: z.string().min(1).max(512),
-  destinationAddress: z.string().min(1).max(512),
+  pickup: TripAddressPointSchema,
+  destination: TripAddressPointSchema,
   estimatedDistanceMeters: z.number().int().nonnegative(),
   estimatedDurationSeconds: z.number().int().nonnegative(),
   createdAt: z.string().datetime({ offset: true }),
@@ -183,18 +304,16 @@ export const CurrentUserResponseSchema = z.object({
 });
 export type CurrentUserResponse = z.infer<typeof CurrentUserResponseSchema>;
 
-export const TripStopRequestSchema = CoordinateSchema.extend({
-  address: z.string().min(1).max(512),
+export const TripStopRequestSchema = TripAddressPointSchema.extend({
+  sequence: z.number().int().min(1).max(10),
 });
 export type TripStopRequest = z.infer<typeof TripStopRequestSchema>;
 
 export const CreateTripRequestSchema = z.object({
-  pickup: CoordinateSchema,
-  destination: CoordinateSchema,
-  pickupAddress: z.string().min(1).max(512),
-  destinationAddress: z.string().min(1).max(512),
+  pickup: TripAddressPointSchema,
+  destination: TripAddressPointSchema,
   passengerPriceKopecks: KopecksSchema,
-  stops: z.array(TripStopRequestSchema).max(10).optional(),
+  waypoints: z.array(TripStopRequestSchema).max(10).optional(),
   options: z
     .object({
       childSeat: z.boolean().optional(),
@@ -206,9 +325,41 @@ export const CreateTripRequestSchema = z.object({
 });
 export type CreateTripRequest = z.infer<typeof CreateTripRequestSchema>;
 
-export const CreateTripResponseSchema = z.object({ trip: TripSummarySchema });
+export const TripMutationResponseSchema = z.object({
+  id: z.string().uuid(),
+  status: TripStatusSchema,
+  version: z.number().int().nonnegative(),
+});
+export type TripMutationResponse = z.infer<typeof TripMutationResponseSchema>;
+
+export const CreateTripResponseSchema = TripMutationResponseSchema;
 export type CreateTripResponse = z.infer<typeof CreateTripResponseSchema>;
-export const GetTripResponseSchema = CreateTripResponseSchema;
+
+export const PassengerTripDetailsSchema = TripMutationResponseSchema.extend({
+  passengerPriceKopecks: KopecksSchema,
+  finalPriceKopecks: KopecksSchema.nullable(),
+  selectedDriverId: z.string().uuid().nullable(),
+  selectedVehicleId: z.string().uuid().nullable(),
+  pickup: TripAddressPointSchema,
+  destination: TripAddressPointSchema,
+  estimatedDistanceMeters: z.number().int().nonnegative(),
+  estimatedDurationSeconds: z.number().int().nonnegative(),
+  startedAt: z.string().datetime({ offset: true }).nullable(),
+  completedAt: z.string().datetime({ offset: true }).nullable(),
+  cancelledAt: z.string().datetime({ offset: true }).nullable(),
+  createdAt: z.string().datetime({ offset: true }),
+  updatedAt: z.string().datetime({ offset: true }),
+  options: z.object({
+    childSeat: z.boolean(),
+    pet: z.boolean(),
+    luggage: z.boolean(),
+  }),
+  comment: z.string().nullable(),
+  waypoints: z.array(TripStopRequestSchema).max(10),
+});
+export type PassengerTripDetails = z.infer<typeof PassengerTripDetailsSchema>;
+
+export const GetTripResponseSchema = PassengerTripDetailsSchema;
 export type GetTripResponse = z.infer<typeof GetTripResponseSchema>;
 
 export const CreateDriverBidRequestSchema = z.object({

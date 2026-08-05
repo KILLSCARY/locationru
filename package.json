@@ -7,12 +7,32 @@
   "engines": {
     "node": ">=20"
   },
+  "pnpm": {
+    "overrides": {
+      "find-my-way": "9.7.0",
+      "js-yaml@^5.0.0": "5.2.2",
+      "postcss": "8.5.18",
+      "sharp": "0.35.0"
+    }
+  },
   "scripts": {
     "dev": "turbo run dev",
+    "dev:stack": "node --env-file=.env scripts/dev-stack.mjs",
+    "dev:seed": "node --env-file=.env scripts/dev-seed.mjs",
+    "dev:reset": "node --env-file=.env scripts/dev-reset.mjs",
+    "staging:init": "node scripts/staging-env-init.mjs",
+    "staging:up": "node scripts/staging-compose.mjs up",
+    "staging:down": "node scripts/staging-compose.mjs down",
+    "staging:status": "node scripts/staging-compose.mjs status",
+    "staging:logs": "node scripts/staging-compose.mjs logs",
+    "staging:backup": "node scripts/staging-compose.mjs backup",
+    "staging:backups": "node scripts/staging-compose.mjs backups",
+    "staging:https:cert": "node scripts/staging-compose.mjs cert",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "test:journey": "node --env-file=.env scripts/test-journey.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "infra:up": "docker compose up -d --wait",
@@ -20,12 +40,12 @@
     "infra:logs": "docker compose logs -f"
   },
   "devDependencies": {
-    "@eslint/js": "9.39.1",
-    "eslint": "9.39.1",
+    "@eslint/js": "10.0.1",
+    "eslint": "10.8.0",
     "globals": "16.5.0",
     "prettier": "3.7.4",
     "turbo": "2.7.2",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.50.1"
+    "typescript-eslint": "8.65.0"
   }
 }

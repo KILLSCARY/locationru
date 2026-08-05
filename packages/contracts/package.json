@@ -4,11 +4,14 @@
   "private": true,
   "type": "module",
   "main": "dist/index.js",
+  "module": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
+      "react-native": "./dist/index.js",
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     }
   },
   "scripts": {
@@ -16,7 +19,7 @@
     "build": "tsc",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/contracts.test.mjs"
+    "test": "pnpm run build && node --test test/contracts.test.mjs"
   },
   "dependencies": {
     "zod": "3.24.1"

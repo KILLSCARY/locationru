@@ -1,0 +1,229 @@
+name: resilient-taxi-yandex
+
+services:
+  postgres:
+    image: postgis/postgis:17-3.5
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+    expose:
+      - '5432'
+    volumes:
+      - yandex_postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    networks:
+      - backend
+
+  redis:
+    image: redis:7.4.9-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command:
+      [
+        'redis-server',
+        '--appendonly',
+        'yes',
+        '--requirepass',
+        '${REDIS_PASSWORD:?REDIS_PASSWORD is required}',
+      ]
+    expose:
+      - '6379'
+    volumes:
+      - yandex_redis_data:/data
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep PONG',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+    networks:
+      - backend
+
+  api-migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: build
+    restart: 'no'
+    env_file:
+      - .env.staging
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+    command: ['pnpm', '--filter', '@resilient-taxi/api', 'db:migrate:deploy']
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+
+  api-seed:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: build
+    restart: 'no'
+    env_file:
+      - .env.staging
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+    command: ['pnpm', '--filter', '@resilient-taxi/api', 'db:seed']
+    depends_on:
+      api-migrate:
+        condition: service_completed_successfully
+    networks:
+      - backend
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: runtime
+    restart: unless-stopped
+    env_file:
+      - .env.staging
+    environment:
+      API_PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+    expose:
+      - '3000'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:3000/api/v1/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    depends_on:
+      api-seed:
+        condition: service_completed_successfully
+    networks:
+      - backend
+
+  admin:
+    build:
+      context: .
+      dockerfile: apps/admin-web/Dockerfile
+      target: runtime
+    restart: unless-stopped
+    environment:
+      API_URL: http://api:3000/api/v1
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+    expose:
+      - '3000'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:3000/login').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - backend
+
+  postgres-backup:
+    image: postgis/postgis:17-3.5
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PGDATABASE: ${POSTGRES_DB:?POSTGRES_DB is required}
+      BACKUP_DIR: /backups
+      BACKUP_INTERVAL_SECONDS: ${STAGING_BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETENTION_DAYS: ${STAGING_BACKUP_RETENTION_DAYS:-7}
+    entrypoint: ['/bin/sh', '/opt/staging/postgres-backup-loop.sh']
+    volumes:
+      - ./.staging/yandex-backups:/backups
+      - ./infrastructure/staging/postgres-backup-loop.sh:/opt/staging/postgres-backup-loop.sh:ro
+      - ./infrastructure/staging/postgres-backup-once.sh:/opt/staging/postgres-backup-once.sh:ro
+    depends_on:
+      api-seed:
+        condition: service_completed_successfully
+    networks:
+      - backend
+
+  redis-backup:
+    image: redis:7.4.9-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDISCLI_AUTH: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      BACKUP_DIR: /backups
+      BACKUP_INTERVAL_SECONDS: ${STAGING_BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETENTION_DAYS: ${STAGING_BACKUP_RETENTION_DAYS:-7}
+    entrypoint: ['/bin/sh', '/opt/staging/redis-backup-loop.sh']
+    volumes:
+      - ./.staging/yandex-backups:/backups
+      - ./infrastructure/staging/redis-backup-loop.sh:/opt/staging/redis-backup-loop.sh:ro
+      - ./infrastructure/staging/redis-backup-once.sh:/opt/staging/redis-backup-once.sh:ro
+    depends_on:
+      api-seed:
+        condition: service_completed_successfully
+    networks:
+      - backend
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    environment:
+      YANDEX_BASE_DOMAIN: ${YANDEX_BASE_DOMAIN:?YANDEX_BASE_DOMAIN is required}
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./infrastructure/yandex/Caddyfile:/etc/caddy/Caddyfile:ro
+      - yandex_caddy_data:/data
+      - yandex_caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+      admin:
+        condition: service_healthy
+    networks:
+      - backend
+      - edge
+
+networks:
+  backend:
+    internal: true
+  edge:
+
+volumes:
+  yandex_postgres_data:
+  yandex_redis_data:
+  yandex_caddy_data:
+  yandex_caddy_config:

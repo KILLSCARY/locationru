@@ -1,0 +1,305 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      # The repository currently uses master; keep it protected by the same checks
+      # until the default branch is renamed to main.
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_ENV: test
+  API_PORT: '3000'
+  DATABASE_URL: postgresql://resilient_taxi:ci_postgres_password@localhost:5432/resilient_taxi
+  REDIS_URL: redis://localhost:6379
+  AUTH_JWT_SECRET: ci-access-token-secret-that-is-at-least-32-characters
+  AUTH_OTP_HASH_SECRET: ci-otp-hash-secret-that-is-at-least-32-characters
+  TRIPS_BOARDING_CODE_HASH_SECRET: ci-boarding-code-secret-that-is-at-least-32-characters
+
+jobs:
+  node-quality:
+    name: Node.js quality, contracts and application builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
+      - name: Set up Node.js and pnpm cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Prepare Node.js report directory
+        run: mkdir -p artifacts/node
+
+      - name: Install locked dependencies
+        run: |
+          set -o pipefail
+          pnpm install --frozen-lockfile | tee artifacts/node/install.log
+
+      - name: Lint workspace
+        run: |
+          set -o pipefail
+          pnpm lint | tee artifacts/node/lint.log
+
+      - name: Type-check TypeScript workspace
+        run: |
+          set -o pipefail
+          pnpm typecheck | tee artifacts/node/typecheck.log
+
+      - name: Run workspace unit tests
+        run: |
+          set -o pipefail
+          pnpm test | tee artifacts/node/unit-tests.log
+
+      - name: Validate self-hosted staging configuration
+        run: |
+          set -o pipefail
+          cp .env.staging.example .env.staging
+          docker compose --env-file .env.staging --file docker-compose.staging.yml config --quiet 2>&1 | tee artifacts/node/staging-compose.log
+          docker compose --env-file .env.staging --file docker-compose.yandex.yml config --quiet 2>&1 | tee artifacts/node/yandex-compose.log
+
+      - name: Build API
+        run: |
+          set -o pipefail
+          pnpm --filter @resilient-taxi/api build | tee artifacts/node/api-build.log
+
+      - name: Build admin web
+        run: |
+          set -o pipefail
+          pnpm --filter @resilient-taxi/admin-web build | tee artifacts/node/admin-web-build.log
+
+      - name: Check passenger mobile application
+        run: |
+          set -o pipefail
+          pnpm --filter @resilient-taxi/passenger-mobile typecheck | tee artifacts/node/passenger-mobile-typecheck.log
+          pnpm --filter @resilient-taxi/passenger-mobile build | tee artifacts/node/passenger-mobile-build.log
+
+      - name: Upload Node.js reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-quality-reports
+          path: |
+            artifacts/node/**
+            apps/**/coverage/**
+            apps/**/test-results/**
+            packages/**/coverage/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+  api-database-tests:
+    name: API migrations, integration and e2e tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_USER: resilient_taxi
+          POSTGRES_PASSWORD: ci_postgres_password
+          POSTGRES_DB: resilient_taxi
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U resilient_taxi -d resilient_taxi"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7.4.9-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
+      - name: Set up Node.js and pnpm cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Prepare API report directory
+        run: mkdir -p artifacts/api
+
+      - name: Install locked dependencies
+        run: |
+          set -o pipefail
+          pnpm install --frozen-lockfile | tee artifacts/api/install.log
+
+      - name: Validate Prisma schema
+        run: |
+          set -o pipefail
+          pnpm --filter @resilient-taxi/api db:validate | tee artifacts/api/prisma-validate.log
+
+      - name: Generate Prisma Client
+        run: |
+          set -o pipefail
+          pnpm --filter @resilient-taxi/api prisma:generate | tee artifacts/api/prisma-generate.log
+
+      - name: Apply migrations to an empty PostGIS database
+        run: |
+          set -o pipefail
+          pnpm --filter @resilient-taxi/api db:migrate:deploy | tee artifacts/api/migrations.log
+
+      - name: Verify PostGIS and repeatable migrations
+        run: |
+          set -o pipefail
+          psql "$DATABASE_URL" --tuples-only --no-align --command "SELECT PostGIS_Version();" | tee artifacts/api/postgis-version.log
+          pnpm --filter @resilient-taxi/api db:migrate:deploy | tee artifacts/api/migrations-repeat.log
+          pnpm --filter @resilient-taxi/api exec prisma migrate status | tee artifacts/api/migrations-status.log
+
+      - name: Run API unit tests
+        run: |
+          set -o pipefail
+          pnpm --filter @resilient-taxi/api test:unit --json --outputFile=../../artifacts/api/unit-tests.json | tee artifacts/api/unit-tests.log
+
+      - name: Run API PostGIS integration tests
+        env:
+          RUN_POSTGIS_INTEGRATION: 'true'
+        run: |
+          set -o pipefail
+          pnpm --filter @resilient-taxi/api test:integration --json --outputFile=../../artifacts/api/integration-tests.json | tee artifacts/api/integration-tests.log
+
+      - name: Run API e2e tests
+        run: |
+          set -o pipefail
+          pnpm --filter @resilient-taxi/api test:e2e --json --outputFile=../../artifacts/api/e2e-tests.json | tee artifacts/api/e2e-tests.log
+
+      - name: Upload API reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-test-reports
+          path: |
+            artifacts/api/**
+            apps/api/coverage/**
+            apps/api/test-results/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+  android:
+    name: Android unit tests and debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Prepare Android report directory
+        run: mkdir -p artifacts/android
+
+      - name: Allow Gradle wrapper execution
+        working-directory: apps/driver-android
+        run: chmod +x gradlew
+
+      - name: Run Android unit tests and static checks
+        working-directory: apps/driver-android
+        run: |
+          set -o pipefail
+          ./gradlew unitTest detekt ktlintCheck --stacktrace | tee ../../artifacts/android/unit-tests.log
+
+      - name: Assemble Android development debug APK
+        working-directory: apps/driver-android
+        run: |
+          set -o pipefail
+          ./gradlew :app:assembleDevDebug --stacktrace | tee ../../artifacts/android/assemble-debug.log
+
+      - name: Upload Android reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-reports
+          path: |
+            artifacts/android/**
+            apps/driver-android/**/build/reports/**
+            apps/driver-android/**/build/test-results/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+  security:
+    name: Secret scan and dependency vulnerability audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source with full history for secret scan
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan repository history for secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
+      - name: Set up Node.js and pnpm cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Prepare security report directory
+        run: mkdir -p artifacts/security
+
+      - name: Install locked dependencies
+        run: |
+          set -o pipefail
+          pnpm install --frozen-lockfile | tee artifacts/security/install.log
+
+      - name: Audit production dependency vulnerabilities
+        run: |
+          set -o pipefail
+          pnpm audit --prod --audit-level high | tee artifacts/security/pnpm-audit.log
+
+      - name: Upload security reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            artifacts/security/**
+            gitleaks-report.json
+            pnpm-debug.log
+          if-no-files-found: ignore
+          retention-days: 7
